@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ふるさと納税 上限管理</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header><h1>ふるさと納税 上限管理</h1><p>PDFを直接読み込み、読み取ったデータを端末内DBに保存します。</p></header>
+<main>
+<section class="card">
+<h2>① ファイル登録</h2>
+<input id="pdfInput" type="file" accept="application/pdf" multiple>
+<div class="actions"><button id="loadSample">2025年1〜11月 検証データを読み込む</button><button id="clearDb" class="danger">保存データを消去</button></div>
+<p class="note">Google Driveは使用しません。PDF→文字抽出→項目解析→計算DB保存の順で処理します。</p>
+</section>
+<section class="card">
+<h2>② 年度データ</h2>
+<div id="status"></div>
+<div id="documents"></div>
+</section>
+<section class="card">
+<h2>③ 予測・上限試算</h2>
+<div id="stage"></div>
+<div id="summary"></div>
+</section>
+<section class="card">
+<h2>④ 読み取り詳細</h2>
+<div id="details"></div>
+</section>
+<section class="card">
+<h2>⑤ デバッグ</h2>
+<button id="exportLog">TXTログを書き出す</button>
+<button id="exportDb">保存DBをJSONで書き出す</button>
+<pre id="log"></pre>
+</section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+<script src="app.js" type="module"></script>
+</body></html>

@@ -1,0 +1,17 @@
+{
+  "year": 2025,
+  "source": "Library /2025年: 2025年1〜11月給与明細の検証用抽出データ",
+  "documents": [
+    {"month":1,"date":"2025/01/24","taxable":783150,"totalPayment":796050,"nonTaxable":12900,"employment":4656,"health":11921,"healthSpecial":11779,"care":7268,"pension":59475,"incomeTax":50260,"residentTax":71000,"deductions":291904,"additional":0,"net":504146},
+    {"month":2,"date":"2025/02/25","taxable":781000,"totalPayment":786200,"nonTaxable":5200,"employment":4597,"health":11921,"healthSpecial":11779,"care":7268,"pension":59475,"incomeTax":49870,"residentTax":71000,"deductions":293542,"additional":0,"net":492658},
+    {"month":3,"date":"2025/03/25","taxable":781000,"totalPayment":787340,"nonTaxable":6340,"employment":4604,"health":11921,"healthSpecial":11779,"care":7268,"pension":59475,"incomeTax":49870,"residentTax":71000,"deductions":291274,"additional":0,"net":496066},
+    {"month":4,"date":"2025/04/25","taxable":804000,"totalPayment":814620,"nonTaxable":10620,"employment":4370,"health":11921,"healthSpecial":11779,"care":7268,"pension":59475,"incomeTax":54160,"residentTax":71000,"deductions":298908,"additional":0,"net":515712},
+    {"month":5,"date":"2025/05/23","taxable":804080,"totalPayment":816980,"nonTaxable":12900,"employment":4383,"health":13727,"healthSpecial":11158,"care":6636,"pension":59475,"incomeTax":54060,"residentTax":71000,"deductions":296550,"additional":0,"net":520430},
+    {"month":6,"date":"2025/06/25","taxable":804000,"totalPayment":808120,"nonTaxable":4120,"employment":4334,"health":13727,"healthSpecial":11158,"care":6636,"pension":59475,"incomeTax":54050,"residentTax":99500,"deductions":325254,"additional":0,"net":482866},
+    {"month":7,"date":"2025/07/25","taxable":804000,"totalPayment":814530,"nonTaxable":10530,"employment":4369,"health":13727,"healthSpecial":11158,"care":6636,"pension":59475,"incomeTax":54050,"residentTax":98800,"deductions":325694,"additional":477480,"net":966316},
+    {"month":8,"date":"2025/08/25","taxable":804000,"totalPayment":813980,"nonTaxable":9980,"employment":4366,"health":13727,"healthSpecial":11158,"care":6636,"pension":59475,"incomeTax":54050,"residentTax":98800,"deductions":327826,"additional":0,"net":486154},
+    {"month":9,"date":"2025/09/25","taxable":804000,"totalPayment":813210,"nonTaxable":9210,"employment":4362,"health":13727,"healthSpecial":11158,"care":6636,"pension":59475,"incomeTax":54050,"residentTax":98800,"deductions":325839,"additional":0,"net":487371},
+    {"month":10,"date":"2025/10/24","taxable":804000,"totalPayment":811080,"nonTaxable":7080,"employment":4350,"health":14422,"healthSpecial":11723,"care":6972,"pension":59475,"incomeTax":53750,"residentTax":98800,"deductions":328360,"additional":0,"net":482720},
+    {"month":11,"date":"2025/11/25","taxable":804000,"totalPayment":809050,"nonTaxable":5050,"employment":4339,"health":14422,"healthSpecial":11723,"care":6972,"pension":59475,"incomeTax":60220,"residentTax":98800,"deductions":333390,"additional":0,"net":475660}
+  ]
+}
