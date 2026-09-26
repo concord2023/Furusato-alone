@@ -1,6 +1,3 @@
-import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
-
 const DB='furusatoStandaloneDB', DOCS='documents', LOGS='logs', META='meta', YEAR=2025;
 let state={documents:[],logs:[]};
 const $=id=>document.getElementById(id);
@@ -13,48 +10,65 @@ const allDocs=()=>tx(DOCS,'readonly',s=>new Promise((res,rej)=>{const r=s.getAll
 const putLog=e=>tx(LOGS,'readwrite',s=>s.add(e));
 const allLogs=()=>tx(LOGS,'readonly',s=>new Promise((res,rej)=>{const r=s.getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
 async function clearDB(){const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction([DOCS,LOGS,META],'readwrite');t.objectStore(DOCS).clear();t.objectStore(LOGS).clear();t.objectStore(META).clear();t.oncomplete=res;t.onerror=()=>rej(t.error)})}
-function norm(s){return String(s||'').replace(/（/g,'(').replace(/）/g,')').replace(/[−–—]/g,'-').replace(/[〜～]/g,'~').replace(/＋/g,'+').replace(/\s+/g,' ').trim()}
-function nums(s){return [...String(s||'').matchAll(/-?\d[\d,]*/g)].map(m=>Number(m[0].replaceAll(',','')))}
-function blockAfter(text,startLabel,endLabel){const a=text.indexOf(startLabel);if(a<0)return '';const b=endLabel?text.indexOf(endLabel,a+startLabel.length):-1;return text.slice(a+startLabel.length,b<0?Math.min(text.length,a+600):b)}
-function parseSalary(rawText,name){
- const text=norm(rawText);const mm=text.match(/(20\d{2})年(\d{1,2})月/);const year=mm?+mm[1]:null,month=mm?+mm[2]:null;
- const d={id:null,kind:'salary',year,month,name,status:'parsed',rawText,createdAt:new Date().toISOString()};
- d.payDate=(text.match(/20\d{2}\/\d{2}\/\d{2}/)||[])[0]||null;
- const after=(label)=>{const i=text.indexOf(label);return i<0?'':text.slice(i+label.length,i+label.length+180)};
- d.taxable=nums(after('課税対象額 Taxable Amount'))[0]??null;
- d.totalPayment=nums(after('支給合計(A) Total Payment'))[0]??null;
- d.nonTaxable=(d.totalPayment!=null&&d.taxable!=null)?d.totalPayment-d.taxable:(nums(after('Non-taxable Amount'))[0]??nums(after('Non‑taxable Amount'))[0]??null);
- d.health=nums(after('健康保険料(基本'))[0]??null;
- d.healthSpecial=nums(after('健康保険料(特定'))[0]??null;
- d.care=nums(after('介護保険料'))[0]??null;
- d.pension=nums(after('年金保険料'))[0]??null;
- const empBlock=after('雇用保険料');const en=nums(empBlock);d.employment=en[0]??null;
- d.incomeTax=nums(blockAfter(text,'所得税','住民税'))[0]??null;d.residentTax=nums(blockAfter(text,'住民税','控除合計'))[0]??null;
- const dedMatch=text.match(/金融機関名 Name of Bank[\s\S]{0,220}?(\d{2,3},\d{3})/);d.deductions=dedMatch?Number(dedMatch[1].replaceAll(',','')):null;
- const netBlock=(text.match(/健康保険／介護保険 Health\/Nursing[\s\S]{0,320}?振込額明細/)||[])[0]||'';const netNums=nums(netBlock).filter(n=>n>=10000);d.net=netNums.length?netNums.at(-1):null;
- d.additional=(d.net!=null&&d.totalPayment!=null&&d.deductions!=null)?d.net-d.totalPayment+d.deductions:null;
- d.social=[d.employment,d.health,d.healthSpecial,d.care,d.pension].every(v=>v!=null)?[d.employment,d.health,d.healthSpecial,d.care,d.pension].reduce((a,b)=>a+b,0):null;
- const required=['year','month','taxable','totalPayment','nonTaxable','employment','health','healthSpecial','care','pension','deductions','additional','net'];d.missingFields=required.filter(k=>d[k]==null);d.needsReview=d.missingFields.length>0;d.status=d.needsReview?'review':'parsed';
+function makeId(d){return d.id||`data-${d.year||YEAR}-${d.kind||'salary'}-${d.month||0}-${d.name||''}`}
+function normalizeDoc(x,index,sourceName){
+ const d={...x};
+ d.id=makeId(d); d.year=Number(d.year??YEAR); d.month=d.month==null?null:Number(d.month); d.kind=d.kind||'salary'; d.name=d.name||`${d.year}-${d.month||'annual'}-${d.kind}`;
+ d.needsReview=Boolean(d.needsReview); d.status=d.status||'parsed'; d.source=d.source||sourceName||'imported-data';
+ if(d.kind==='salary'){
+   const required=['year','month','taxable','social'];
+   d.missingFields=Array.isArray(d.missingFields)?d.missingFields:required.filter(k=>d[k]==null);
+   d.needsReview=d.missingFields.length>0; d.status=d.needsReview?'review':'parsed';
+ }
  return d;
 }
-function parseBonus(rawText,name){const text=norm(rawText);const m=text.match(/(20\d{2})年?(\d{1,2})月/);const numsAll=nums(text);const amount=(text.match(/賞与[^0-9]{0,80}([0-9,]{5,})/)||[])[1];const d={id:null,kind:'bonus',year:m?+m[1]:null,month:m?+m[2]:null,name,status:'review',rawText,createdAt:new Date().toISOString(),amount:amount?Number(amount.replaceAll(',','')):null};d.missingFields=[];if(d.year==null)d.missingFields.push('year');if(d.month==null)d.missingFields.push('month');if(d.amount==null)d.missingFields.push('amount');d.needsReview=d.missingFields.length>0;d.status=d.needsReview?'review':'parsed';return d}
-async function extractPdf(file){const buf=await file.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;let text='',items=0;for(let p=1;p<=pdf.numPages;p++){const page=await pdf.getPage(p);const c=await page.getTextContent();items+=c.items.length;text+=c.items.map(x=>x.str).join(' ')+'\n'}return {text,items,pages:pdf.numPages}}
-async function stableId(file){const b=await file.arrayBuffer();const h=await crypto.subtle.digest('SHA-256',b);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function importJsonFiles(files){
+ for(const file of files){
+  try{
+   const parsed=JSON.parse(await file.text());
+   const list=Array.isArray(parsed)?parsed:(Array.isArray(parsed.documents)?parsed.documents:[]);
+   if(!list.length) throw new Error('documents配列がありません');
+   let added=0,updated=0;
+   for(const raw of list){
+    const d=normalizeDoc(raw,added,file.name); const existing=state.documents.find(x=>x.id===d.id);
+    await putDoc(d); existing?updated++:added++;
+   }
+   addLog('データ取込',{file:file.name,count:list.length,added,updated});
+  }catch(e){addLog('データ取込ERROR',{file:file.name,error:String(e),stack:e?.stack||''})}
+ }
+ state.documents=await allDocs(); state.logs=await allLogs(); render();
+}
 function salaryDeduction2025(gross){if(gross<=1900000)return 650000;if(gross<=3600000)return gross*.3+80000;if(gross<=6600000)return gross*.2+440000;if(gross<=8500000)return gross*.1+1100000;return 1950000}
 function basicDeduction2025(income){if(income<=1320000)return 950000;if(income<=3360000)return 880000;if(income<=4890000)return 680000;if(income<=6550000)return 630000;if(income<=23500000)return 580000;return income<=24000000?480000:income<=24500000?320000:income<=25000000?160000:0}
 function incomeTaxRate2025(t){if(t<=1949000)return .05;if(t<=3299000)return .10;if(t<=6949000)return .20;if(t<=8999000)return .23;if(t<=17999000)return .33;if(t<=39999000)return .40;return .45}
-function forecast(docs){const sal=docs.filter(d=>d.kind==='salary'&&d.year===YEAR&&!d.needsReview).sort((a,b)=>a.month-b.month);const actual=sal.filter(d=>d.month>=1&&d.month<=11);if(actual.length===0)return null;const sum=(k)=>actual.reduce((s,d)=>s+(Number(d[k])||0),0);const avgTax=sum('taxable')/actual.length;const decTax=avgTax;const yearTax=sum('taxable')+decTax;const avgSoc=sum('social')/actual.length;const yearSoc=sum('social')+avgSoc;const salaryIncome=Math.max(0,yearTax-salaryDeduction2025(yearTax));const basic=basicDeduction2025(salaryIncome);const taxableIncome=Math.max(0,Math.floor((salaryIncome-yearSoc-basic)/1000)*1000);const residentShare=taxableIncome*.10;const rate=incomeTaxRate2025(taxableIncome);const cap=2000+(residentShare*.20)/(0.90-rate*1.021);const bonus=docs.filter(d=>d.kind==='bonus'&&d.year===YEAR&&!d.needsReview);return {months:actual.length,actualTax:sum('taxable'),decTax,yearTax,avgSoc,yearSoc,salaryDeduction:salaryDeduction2025(yearTax),salaryIncome,basic,taxableIncome,residentShare,incomeTaxRate:rate,capDonation:Math.floor(cap),bonusCount:bonus.length,bonusTaxable:bonus.reduce((s,d)=>s+(Number(d.amount)||0),0),bonusStatus:bonus.length?'actual':'not_registered'} }
-function render(){const docs=state.documents.sort((a,b)=>(a.year||0)-(b.year||0)||(a.month||0)-(b.month||0));const sal=docs.filter(d=>d.kind==='salary');const parsed=sal.filter(d=>!d.needsReview);$('status').innerHTML=`<div class="grid"><div class="metric"><span>給与PDF</span><b>${sal.length}</b></div><div class="metric"><span>解析成功</span><b>${parsed.length}</b></div><div class="metric"><span>確認必要</span><b>${sal.filter(d=>d.needsReview).length}</b></div><div class="metric"><span>重複登録</span><b>防止済</b></div></div>`;
- $('documents').innerHTML=docs.map(d=>`<div class="row"><span>${d.year||'—'}/${String(d.month||'').padStart(2,'0')} ${d.name||''}</span><span>${d.needsReview?'<span class="warn">確認必要</span>':'<span class="ok">解析済</span>'}</span><span>${d.kind==='salary'?yen(d.taxable):yen(d.amount)}</span></div>`).join('')||'<p class="small">まだファイルがありません。</p>';
- const f=forecast(docs);$('stage').innerHTML=f?`<div class="stagebox"><b>現在：予測ステージ</b><br>2025年1〜11月の実績 ${f.months}か月から12月給与を予測。<strong>源泉徴収票・手動入力は使用していません。</strong><br>賞与：${f.bonusStatus==='actual'?`${f.bonusCount}件の実績を登録済み`:'未登録（推測で補完しません）'}</div>`:'<div class="stagebox">2025年の給与データを登録してください。</div>';
- $('summary').innerHTML=f?`<div class="grid"><div class="metric"><span>1〜11月 課税対象額</span><b>${yen(f.actualTax)}</b></div><div class="metric"><span>12月給与予測</span><b>${yen(f.decTax)}</b></div><div class="metric"><span>給与年間予測</span><b>${yen(f.yearTax)}</b></div><div class="metric"><span>社会保険料年間予測</span><b>${yen(f.yearSoc)}</b></div><div class="metric"><span>給与所得予測</span><b>${yen(f.salaryIncome)}</b></div><div class="metric"><span>所得控除（基礎）</span><b>${yen(f.basic)}</b></div><div class="metric"><span>住民税所得割 仮試算</span><b>${yen(f.residentShare)}</b></div><div class="metric"><span>寄附上限 仮試算</span><b>${yen(f.capDonation)}</b></div></div><p class="small">※これは予測段階の仮試算です。賞与・扶養等の年末確定情報が未入力のため、最終上限とは扱いません。源泉徴収票はこの段階では使用しません。</p>`:'';
- $('details').innerHTML=docs.map(d=>`<div class="file"><b>${d.name||'書類'}</b><br>種類 ${d.kind} / 支払日 ${d.payDate||'—'} / 課税 ${yen(d.taxable)} / 支給合計 ${yen(d.totalPayment)} / 社会保険 ${yen(d.social)} / 手取り ${yen(d.net)}<br><span class="small">状態: PDF読込 → 文字抽出 → 項目解析 → DB保存 / 文字数 ${d.extraction?.textChars??'—'} / 項目数 ${d.extraction?.textItems??'—'} / ページ ${d.extraction?.pages??'—'}</span>${d.needsReview?`<br><span class="warn">不足: ${(d.missingFields||[]).join(', ')}</span>`:''}</div>`).join('');
+function forecast(docs){
+ const sal=docs.filter(d=>d.kind==='salary'&&d.year===YEAR&&!d.needsReview).sort((a,b)=>(a.month||0)-(b.month||0));
+ const actual=sal.filter(d=>d.month>=1&&d.month<=11); if(actual.length===0)return null;
+ const sum=k=>actual.reduce((s,d)=>s+(Number(d[k])||0),0);
+ const avgTax=sum('taxable')/actual.length, decTax=avgTax, yearTax=sum('taxable')+decTax;
+ const avgSoc=sum('social')/actual.length, yearSoc=sum('social')+avgSoc;
+ const salaryDeduction=salaryDeduction2025(yearTax), salaryIncome=Math.max(0,yearTax-salaryDeduction);
+ const basic=basicDeduction2025(salaryIncome);
+ const taxableIncome=Math.max(0,Math.floor((salaryIncome-yearSoc-basic)/1000)*1000);
+ const residentShare=taxableIncome*.10, rate=incomeTaxRate2025(taxableIncome);
+ const cap=2000+(residentShare*.20)/(0.90-rate*1.021);
+ const bonus=docs.filter(d=>d.kind==='bonus'&&d.year===YEAR&&!d.needsReview);
+ return {months:actual.length,actualTax:sum('taxable'),decTax,yearTax,avgSoc,yearSoc,salaryDeduction,salaryIncome,basic,taxableIncome,residentShare,incomeTaxRate:rate,capDonation:Math.floor(cap),bonusCount:bonus.length,bonusTaxable:bonus.reduce((s,d)=>s+(Number(d.taxable??d.amount)||0),0)};
 }
-async function handleFiles(files){for(const file of files){try{const id=await stableId(file);const exists=state.documents.find(d=>d.id===id);if(exists){addLog('重複スキップ',{name:file.name,id});continue}addLog('PDF開始',{name:file.name,size:file.size});const x=await extractPdf(file);addLog('PDF文字抽出',{name:file.name,pages:x.pages,textChars:x.text.length,textItems:x.items});if(x.text.trim().length<50){const d={id,kind:/Bonus/i.test(file.name)?'bonus':'unknown',name:file.name,status:'error',needsReview:true,missingFields:['pdfText'],rawText:x.text,extraction:{pages:x.pages,textChars:x.text.length,textItems:x.items},fileSize:file.size,createdAt:new Date().toISOString()};await putDoc(d);addLog('抽出不足',{name:file.name});continue}const d=/Bonus/i.test(file.name)?parseBonus(x.text,file.name):parseSalary(x.text,file.name);d.id=id;d.fileSize=file.size;d.extraction={pages:x.pages,textChars:x.text.length,textItems:x.items,method:'pdfjs-text'};await putDoc(d);addLog('DB保存',{name:file.name,status:d.status,needsReview:d.needsReview,missingFields:d.missingFields||[]});}catch(e){addLog('ERROR',{name:file.name,error:String(e),stack:e?.stack||''})}}state.documents=await allDocs();render();}
-$('pdfInput').addEventListener('change',e=>handleFiles([...e.target.files]));
-$('loadSample').onclick=async()=>{const r=await fetch('sample-2025-jan-nov.json');const j=await r.json();for(const x of j.documents){const id=`sample-${x.month}`;await putDoc({id,kind:'salary',year:2025,month:x.month,name:`1219856-Chinginmeisai-2025${String(x.month).padStart(2,'0')}.pdf`,status:'parsed',needsReview:false,source:'verified-sample',payDate:x.date,extraction:{method:'verified-library-extraction'},...x})}state.documents=await allDocs();addLog('検証データ読込',{count:j.documents.length,source:j.source});await putLog(state.logs.at(-1));render()};
+function render(){
+ const docs=state.documents.slice().sort((a,b)=>(a.year||0)-(b.year||0)||(a.month||0)-(b.month||0));
+ const sal=docs.filter(d=>d.kind==='salary'), parsed=sal.filter(d=>!d.needsReview);
+ $('status').innerHTML=`<div class="grid"><div class="metric"><span>給与データ</span><b>${sal.length}</b></div><div class="metric"><span>利用可能</span><b>${parsed.length}</b></div><div class="metric"><span>確認必要</span><b>${sal.filter(d=>d.needsReview).length}</b></div><div class="metric"><span>重複登録</span><b>防止済</b></div></div>`;
+ $('documents').innerHTML=docs.map(d=>`<div class="row"><span>${d.year||'—'}/${String(d.month||'').padStart(2,'0')} ${d.name||''}</span><span>${d.needsReview?'<span class="warn">確認必要</span>':'<span class="ok">利用可能</span>'}</span><span>${d.kind==='salary'?yen(d.taxable):yen(d.taxable??d.amount)}</span></div>`).join('')||'<p class="small">まだデータがありません。</p>';
+ const f=forecast(docs);
+ $('stage').innerHTML=f?`<div class="stagebox"><b>現在：予測ステージ</b><br>${YEAR}年1〜11月の保存済み実績 ${f.months}か月から12月給与を予測しています。<strong>手動入力：0円／源泉徴収票：未使用</strong><br>12月予測は1〜11月の課税対象額の平均、社会保険は同期間の平均を使用します。</div>`:'<div class="stagebox">読み取り済みデータを取り込むと、予測を開始します。</div>';
+ $('summary').innerHTML=f?`<div class="grid"><div class="metric"><span>1〜11月 課税対象額</span><b>${yen(f.actualTax)}</b></div><div class="metric"><span>12月給与予測</span><b>${yen(f.decTax)}</b></div><div class="metric"><span>給与年間予測</span><b>${yen(f.yearTax)}</b></div><div class="metric"><span>社会保険料年間予測</span><b>${yen(f.yearSoc)}</b></div><div class="metric"><span>給与所得予測</span><b>${yen(f.salaryIncome)}</b></div><div class="metric"><span>基礎控除</span><b>${yen(f.basic)}</b></div><div class="metric"><span>住民税所得割 仮試算</span><b>${yen(f.residentShare)}</b></div><div class="metric"><span>寄附上限 仮試算</span><b>${yen(f.capDonation)}</b></div></div><p class="small">賞与は実績データが取り込まれるまで推測で補完しません。扶養・保険等の年末確定情報も未反映です。源泉徴収票が登録された段階では、別ステージとして最終値を計算します。</p>`:'';
+ $('details').innerHTML=docs.map(d=>`<div class="file"><b>${d.name||'データ'}</b><br>種類 ${d.kind} / 支払日 ${d.payDate||d.date||'—'} / 課税 ${yen(d.taxable)} / 支給合計 ${yen(d.totalPayment)} / 社会保険 ${yen(d.social)} / 手取り ${yen(d.net)}${d.needsReview?`<br><span class="warn">不足: ${(d.missingFields||[]).join(', ')}</span>`:''}</div>`).join('');
+}
+$('dataInput').addEventListener('change',e=>importJsonFiles([...e.target.files]));
+$('importData').onclick=()=>$('dataInput').click();
 $('clearDb').onclick=async()=>{if(confirm('保存データを消去しますか？')){await clearDB();state={documents:[],logs:[]};render();$('log').textContent=''}};
 $('exportLog').onclick=()=>download('furusato_debug.txt',state.logs.map(x=>JSON.stringify(x)).join('\n')||'log empty');
 $('exportDb').onclick=()=>download('furusato_db.json',JSON.stringify(state.documents,null,2));
-function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/plain;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-state.documents=await allDocs();state.logs=await allLogs();$('log').textContent=state.logs.map(x=>JSON.stringify(x)).join('\n');render();const boot={time:new Date().toISOString(),msg:'起動',db:DB,year:YEAR,manualInput:0,withholdingUsed:false};state.logs.push(boot);await putLog(boot);$('log').textContent=state.logs.map(x=>JSON.stringify(x)).join('\n');
+function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+state.documents=await allDocs();state.logs=await allLogs();$('log').textContent=state.logs.map(x=>JSON.stringify(x)).join('\n');render();const boot={time:new Date().toISOString(),msg:'起動',db:DB,year:YEAR,manualInput:0,withholdingUsed:false,importMode:'structured-json'};state.logs.push(boot);await putLog(boot);$('log').textContent=state.logs.map(x=>JSON.stringify(x)).join('\n');

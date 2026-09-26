@@ -10,9 +10,9 @@
 <main>
 <section class="card">
 <h2>① ファイル登録</h2>
-<input id="pdfInput" type="file" accept="application/pdf" multiple>
-<div class="actions"><button id="loadSample">2025年1〜11月 検証データを読み込む</button><button id="clearDb" class="danger">保存データを消去</button></div>
-<p class="note">Google Driveは使用しません。PDF→文字抽出→項目解析→計算DB保存の順で処理します。</p>
+<input id="dataInput" type="file" accept="application/json,.json" multiple>
+<div class="actions"><button id="importData">読み取り済みデータを取り込む</button><button id="clearDb" class="danger">保存データを消去</button></div>
+<p class="note">給与明細のPDFはチャット側で読み取り、構造化したJSONをこのアプリに取り込みます。アプリは保存済みデータから予測・上限試算を行います。</p>
 </section>
 <section class="card">
 <h2>② 年度データ</h2>
@@ -25,11 +25,11 @@
 <div id="summary"></div>
 </section>
 <section class="card">
-<h2>④ 読み取り詳細</h2>
+<h2>④ 計算の根拠</h2>
 <div id="details"></div>
 </section>
 <section class="card">
-<h2>⑤ デバッグ</h2>
+<h2>⑤ データ・ログ</h2>
 <button id="exportLog">TXTログを書き出す</button>
 <button id="exportDb">保存DBをJSONで書き出す</button>
 <pre id="log"></pre>
