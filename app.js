@@ -60,9 +60,49 @@ function renderManual(){const years=[...new Set([...state.documents.map(d=>d.yea
 function updateManualCalc(){const y=num($('manualYear').value),m={};for(const id of ['newLife','oldLife','medical','newPension','oldPension','earthquake','oldLongTermDamage','ideco','nationalPension','daughterNationalPension','temporary'])m[id]=num($(id).value);m.daughterPensionEligible=$('daughterPensionEligible').checked;m.temporaryTaxable=$('temporaryTaxable').checked;m.under23Dependent=$('under23Dependent').checked;const l=calcLife(m,y),e=earthquakeDeduction(m);$('lifeBreakdown').innerHTML=`<div>一般生命保険：${yen(l.general)}</div><div>個人年金：${yen(l.pension)}</div><div>介護医療：${yen(l.medical)}</div><strong>生命保険料控除 合計：${yen(l.total)}（上限120,000円）</strong>`;$('earthquakeResult').textContent=`地震保険料控除：${yen(e)}`;$('manualSummary').innerHTML=`iDeCo・小規模企業共済等：${yen(m.ideco)} ／ 国民年金本人：${yen(m.nationalPension)} ／ 娘の国民年金：${m.daughterPensionEligible?'含める':'含めない'} ${yen(m.daughterNationalPension)} ／ 給与調整：${yen(m.temporary)} ${m.temporaryTaxable?'課税':'非課税'}`;}
 async function saveManual(){const y=num($('manualYear').value),m={};for(const id of ['newLife','oldLife','medical','newPension','oldPension','earthquake','oldLongTermDamage','ideco','nationalPension','daughterNationalPension','temporary'])m[id]=num($(id).value);m.daughterPensionEligible=$('daughterPensionEligible').checked;m.temporaryTaxable=$('temporaryTaxable').checked;m.under23Dependent=$('under23Dependent').checked;m.note=$('manualNote').value;state.manual[String(y)]=m;await putMeta('manual',state.manual);const log=addLog('手動入力保存',{year:y,manual:m});await putLog(log);state.logs=await allLogs();render();showMessage(`${y}年の手動入力を保存しました。計算にも反映済み。`,'ok')}
 function render(){const docs=state.documents.slice().sort((a,b)=>(a.year||0)-(b.year||0)||(a.month||0)-(b.month||0));const years=[...new Set(docs.map(d=>d.year).filter(Boolean))].sort((a,b)=>b-a);$('status').innerHTML=`<div class="grid"><div class="metric"><span>保存データ</span><b>${docs.length}</b></div><div class="metric"><span>給与</span><b>${docs.filter(d=>d.kind==='salary').length}</b></div><div class="metric"><span>賞与</span><b>${docs.filter(d=>d.kind==='bonus').length}</b></div><div class="metric"><span>源泉徴収票</span><b>${docs.filter(d=>d.kind==='withholding').length}</b></div><div class="metric"><span>確認必要</span><b>${docs.filter(d=>d.needsReview).length}</b></div></div>`;
+ renderYearTables(docs);
  $('documents').innerHTML=docs.map(d=>`<details class="file"><summary><b>${d.year||'—'}/${d.month?String(d.month).padStart(2,'0')+' ':''}${d.name||d.document||'資料'}</b>　${d.needsReview?'<span class="warn">確認必要</span>':'<span class="ok">保存済み</span>'}</summary><div class="rawgrid"><div>種類</div><div>${d.kind}</div><div>課税対象額</div><div>${yen(d.taxable??d.taxableAmount)}</div><div>支給合計</div><div>${yen(d.totalPayment)}</div><div>非課税額</div><div>${yen(d.nonTaxable??d.nonTaxableAmount)}</div><div>社会保険料</div><div>${yen(d.social)}</div><div>所得税</div><div>${yen(d.incomeTax??d.withholdingTax)}</div><div>住民税</div><div>${yen(d.residentTax)}</div><div>追加支給</div><div>${yen(d.additional??d.additionalPaymentTotal)}</div></div><details><summary>読み取った全項目をJSONで確認</summary><pre>${escapeHtml(JSON.stringify(d,null,2))}</pre></details></details>`).join('')||'<p>まだデータがありません。</p>';
  const selectedYear=num($('calcYear')?.value)||years[0]||2025;if($('calcYear')){$('calcYear').innerHTML=[...new Set([...years,2025,2024])].sort((a,b)=>b-a).map(y=>`<option value="${y}">${y}年</option>`).join('');$('calcYear').value=String(selectedYear)}const f=forecast(docs,selectedYear);$('summary').innerHTML=f?`<div class="grid"><div class="metric"><span>給与年間</span><b>${yen(f.yearSalary)}</b></div><div class="metric"><span>12月給与</span><b>${yen(f.dec)}</b></div><div class="metric"><span>賞与</span><b>${yen(f.bonusTotal)}</b></div><div class="metric"><span>社会保険料</span><b>${yen(f.totalSocial)}</b></div><div class="metric"><span>生命保険料控除</span><b>${yen(f.life.total)}</b></div><div class="metric"><span>iDeCo等</span><b>${yen(f.manualDed-f.life.total-f.earth)}</b></div><div class="metric"><span>比較用課税所得</span><b>${yen(f.taxable)}</b></div><div class="metric"><span>上限概算</span><b>${yen(f.cap)}</b></div></div><p class="small">源泉徴収票は予測計算には使用していません。実績がそろった後の比較・最終計算用として保存します。</p>`:'<p>この年度の給与データがありません。</p>';
  $('details').innerHTML=docs.map(d=>`<div class="file"><b>${d.name||d.document||'資料'}</b><br>保存項目：${Object.keys(d).length}項目　／　計算使用：${d.kind==='salary'?'課税対象額・社会保険料・実績月':'賞与額・社会保険料等（計算段階に応じて）'}${d.kind==='withholding'?'／予測には不使用・比較用':''}</div>`).join('');renderManual();}
+function esc(v){return escapeHtml(String(v??'—'))}
+function fmtCell(v){return v==null||v===''?'—':(typeof v==='number'?Number(v).toLocaleString('ja-JP'):esc(v))}
+function flattenReadFields(d){
+ const rows=[];
+ const push=(section,key,val)=>{if(val===undefined||val===null||val==='')return; if(typeof val==='object')return; rows.push({section,key,value:val});};
+ const skip=new Set(['id','source','status','needsReview','missingFields','kind','type','name','document','year','month','payDate','payday','date','paymentItems','deductionItems','additionalPaymentItems','workingRecord','baseSalaryBreakdown','standardMonthlyRemuneration','standardBonusAmounts']);
+ for(const [k,v] of Object.entries(d)) if(!skip.has(k)) push('基本情報',k,v);
+ for(const [k,v] of Object.entries(d.paymentItems||{})) push('支給項目',k,v);
+ for(const [k,v] of Object.entries(d.additionalPaymentItems||{})) push('追加支給',k,v);
+ for(const [k,v] of Object.entries(d.deductionItems||{})) push('控除項目',k,v);
+ for(const [k,v] of Object.entries(d.workingRecord||{})) push('勤務記録',k,v);
+ for(const [k,v] of Object.entries(d.baseSalaryBreakdown||{})) push('給与内訳',k,v);
+ for(const [k,v] of Object.entries(d.standardMonthlyRemuneration||{})) push('標準報酬',k,v);
+ for(const [k,v] of Object.entries(d.standardBonusAmounts||{})) push('標準賞与',k,v);
+ return rows;
+}
+function findItem(d,patterns){
+ const all=[...(Object.entries(d.paymentItems||{})),...(Object.entries(d.additionalPaymentItems||{}))];
+ for(const [k,v] of all){if(patterns.some(p=>String(k).includes(p)))return v}
+ return null;
+}
+function yearTable(year,docs){
+ const rows=docs.slice().sort((a,b)=>(a.month||0)-(b.month||0));
+ const main=rows.map(d=>{
+   const stock=findItem(d,['持株会','持株補助','持株']);
+   const stockSub=findItem(d,['持株補助']);
+   return `<tr><td>${esc(d.month?`${d.month}月`:d.payDate||d.name||'—')}</td><td>${esc(kindLabel(d.kind))}</td><td>${esc(d.name||d.document||'—')}</td><td>${fmtCell(d.taxable??d.taxableAmount)}</td><td>${fmtCell(d.totalPayment)}</td><td>${fmtCell(d.nonTaxable??d.nonTaxableAmount)}</td><td>${fmtCell(d.employment)}</td><td>${fmtCell(d.health)}</td><td>${fmtCell(d.healthSpecial)}</td><td>${fmtCell(d.care)}</td><td>${fmtCell(d.pension)}</td><td>${fmtCell(d.childSupport)}</td><td>${fmtCell(d.social)}</td><td>${fmtCell(d.incomeTax??d.withholdingTax)}</td><td>${fmtCell(d.residentTax)}</td><td>${fmtCell(d.additional??d.additionalPaymentTotal)}</td><td>${fmtCell(stock)}</td><td>${fmtCell(stockSub)}</td><td>${d.needsReview?'<span class="warn">要確認</span>':'<span class="ok">OK</span>'}</td></tr>`;
+ }).join('');
+ const allItems=rows.map(d=>{
+   const fields=flattenReadFields(d);
+   return `<details class="read-detail"><summary>${esc(d.month?`${d.month}月`:d.payDate||d.name||'資料')}：読み取った全項目 ${fields.length}項目</summary><div class="tablewrap"><table class="readtable full"><thead><tr><th>区分</th><th>項目名</th><th>読み取り値</th></tr></thead><tbody>${fields.map(x=>`<tr><td>${esc(x.section)}</td><td>${esc(x.key)}</td><td>${fmtCell(x.value)}</td></tr>`).join('')}</tbody></table></div></details>`;
+ }).join('');
+ return `<details class="yearblock" open><summary><strong>${year}年</strong>　${rows.length}資料</summary><div class="tablewrap"><table class="readtable"><thead><tr><th>月/日</th><th>種別</th><th>資料</th><th>課税対象額</th><th>支給合計</th><th>非課税額</th><th>雇用</th><th>健康</th><th>健康特定</th><th>介護</th><th>厚年</th><th>子育て支援</th><th>社会保険計</th><th>所得税</th><th>住民税</th><th>追加支給</th><th>持株会</th><th>持株補助</th><th>状態</th></tr></thead><tbody>${main}</tbody></table></div><p class="small">下の各資料を開くと、JSON化された保存データのうち、画面で確認できる全ての読み取り項目を表形式で確認できます。</p>${allItems}</details>`;
+}
+function kindLabel(k){return k==='salary'?'給与':k==='bonus'?'賞与':k==='withholding'?'源泉徴収票':k||'unknown'}
+function renderYearTables(docs){
+ const years=[...new Set(docs.map(d=>d.year).filter(Boolean))].sort((a,b)=>b-a);
+ $('yearTables').innerHTML=years.length?years.map(y=>yearTable(y,docs.filter(d=>d.year===y))).join(''):'<p>まだ読み取り資料がありません。</p>';
+}
 function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 $('reflectJson').onclick=async()=>{try{await importJsonText($('jsonInput').value);$('jsonInput').value=''}catch(e){showMessage('反映できません：'+e.message,'error')}};
 $('copyPrompt').onclick=async()=>{const prompt='ふるさと納税アプリへ反映して。Libraryの最新資料と既存データを比較し、重複を除外。給与明細・賞与明細・源泉徴収票は原文にある項目を省略せず、{"version":1,"documents":[...]}で全項目を返してください。源泉徴収票は予測に使わず、実績後の比較用に保存してください。';await navigator.clipboard.writeText(prompt);showMessage('ChatGPTへの依頼文をコピーしました。','ok')};
