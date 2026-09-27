@@ -6,31 +6,34 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header><h1>ふるさと納税 上限管理</h1><p>給与・賞与などの資料はChatGPTで整理し、このアプリは整理済みデータを保存・計算します。</p></header>
+<header><h1>ふるさと納税 上限管理</h1><p>給与・賞与などの資料はChatGPTで整理し、このアプリは整理した全データを端末内DBに保存・計算します。</p></header>
 <main>
 <section class="card">
-<h2>① データ更新</h2>
-<div id="syncStatus"></div>
+<h2>① ChatGPTからデータを反映</h2>
 <div class="update-steps">
-  <div><b>1.</b> ChatGPTのLibraryに給与明細・賞与明細・源泉徴収票をアップロード</div>
+  <div><b>1.</b> ChatGPTのLibraryに給与明細・賞与明細・源泉徴収票などをアップロード</div>
   <div><b>2.</b> ChatGPTに「ふるさと納税アプリへ反映して」と依頼</div>
-  <div><b>3.</b> ChatGPTが資料を確認して、アプリ用データを更新</div>
-  <div><b>4.</b> アプリを再読み込みすると最新データを自動反映</div>
+  <div><b>3.</b> ChatGPTが資料を読み、<b>読み取った項目を省略せず</b>アプリ用JSONにまとめる</div>
+  <div><b>4.</b> 下の欄へJSONを貼って「反映する」→端末内DBへ保存</div>
 </div>
-<p class="note">このアプリにはPDF読み込み機能はありません。PDFをアプリへアップロードする必要もありません。Libraryの資料をChatGPT側で確認し、アプリ用データファイルを更新する方式です。</p>
+<p class="note">PDFをアプリへアップロードする機能はありません。個人の給与データをGitHubへ置く必要もありません。反映したデータはこの端末のIndexedDBに保存します。</p>
 <div class="actions"><button id="copyRequest">ChatGPTへの更新依頼文をコピー</button></div>
-<pre id="requestText" class="request">Libraryにアップロードした、ふるさと納税に関係する最新の給与明細・賞与明細・源泉徴収票を確認してください。重複資料は除外し、既存データとの差分を確認したうえで、ふるさと納税上限管理アプリのデータを更新してください。給与は課税対象額を基準にし、実績がある月は予測値を置き換えてください。源泉徴収票は予測段階では使わず、実績がそろった後の比較・最終計算に使ってください。更新後は、何を追加・変更したか、どの資料を根拠にしたか、確認が必要な項目があるかを示してください。</pre>
+<pre id="requestText" class="request">Libraryにアップロードした、ふるさと納税に関係する最新資料を確認してください。重複資料を除外し、既存データとの差分を確認したうえで、アプリ用JSONを作ってください。重要：給与明細・賞与明細・源泉徴収票から読み取れた項目は省略せず保存対象にしてください。特に「給与の課税対象額」「支給合計」「非課税額」「社会保険料の各内訳」「所得税」「住民税」「追加支給」「持株会・持株補助などの項目」は、原文に存在する場合は必ず個別項目として残してください。どの項目を上限計算に使うかは、保存した全データとは別に計算ロジックで明示してください。源泉徴収票は予測段階では使わず、実績がそろった後の比較・最終計算に使ってください。JSONは {"version":1,"documents":[...]} の形式で、documentsの各要素には読み取った全項目を入れてください。完了後、追加・変更・確認が必要な項目も説明してください。</pre>
+<textarea id="dataPayload" rows="8" placeholder='ChatGPTが作った {"version":1,"documents":[...]} をここに貼り付けます'></textarea>
+<div class="actions"><button id="applyPayload">ChatGPTデータを反映する</button><button id="clearPayload" class="secondary">貼り付け欄を消す</button></div>
+<div id="syncStatus"></div>
 </section>
 
 <section class="card">
-<h2>② 年度データ</h2>
+<h2>② 読み取り済みデータDB</h2>
+<p class="note">ここが「ChatGPTが何を読み取ったか」を確認する場所です。計算に使わない項目も保存して表示します。各資料を開くと、その資料の全フィールドをJSONで確認できます。</p>
 <div id="status"></div>
 <div id="documents"></div>
 </section>
 
 <section class="card">
 <h2>③ 年度ごとの手動入力</h2>
-<p class="note">資料から読み取れないもの、後から変更したいものだけ入力します。変更すると保存して、上限試算へすぐ反映します。</p>
+<p class="note">資料から読み取れないもの、後から変更したいものだけ入力します。変更すると端末内DBへ保存し、上限試算へ即時反映します。</p>
 <div id="manualInputs"></div>
 </section>
 
@@ -41,12 +44,12 @@
 </section>
 
 <section class="card">
-<h2>⑤ 計算の根拠・データ更新履歴</h2>
+<h2>⑤ 計算に使った項目・根拠</h2>
 <div id="details"></div>
 </section>
 
 <section class="card">
-<h2>⑥ 診断</h2>
+<h2>⑥ 診断・DBバックアップ</h2>
 <button id="exportLog">TXTログを書き出す</button>
 <button id="exportDb">保存DBをJSONで書き出す</button>
 <pre id="log"></pre>
