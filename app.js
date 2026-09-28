@@ -45,10 +45,12 @@ function normalizeDoc(raw,sourceName){
    if(d.year<=0)d.missingFields.push('year');
    if(d.month==null)d.missingFields.push('month');
    if(d.taxable==null)d.missingFields.push('taxableAmount');
-   if(d.totalPayment==null)d.missingFields.push('totalPayment');
-   // needsReview is a derived state. Do not preserve a stale flag from an
-   // older import/migration. December 2024 has no separate income-tax line
-   // on the source slip, so incomeTax must NOT be a required field.
+   // A salary slip can be used for the annual limit calculation with the
+   // taxable amount alone. totalPayment/nonTaxable/additional/tax/resident
+   // are readout-detail fields, not calculation blockers. In particular,
+   // the verified 2025/12 record has taxable=804,000 and social=96,931 but
+   // those optional fields are unavailable in the structured import.
+   // Do not turn that into a false "確認必要" state.
    d.needsReview=d.missingFields.length>0;
  }else{
    d.missingFields=[];
