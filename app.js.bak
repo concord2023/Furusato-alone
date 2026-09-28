@@ -12,22 +12,12 @@ const putLog=e=>tx(LOGS,'readwrite',s=>s.add(e));
 const allLogs=()=>tx(LOGS,'readonly',s=>new Promise((res,rej)=>{const r=s.getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
 const getMeta=k=>tx(META,'readonly',s=>new Promise((res,rej)=>{const r=s.get(k);r.onsuccess=()=>res(r.result?.value);r.onerror=()=>rej(r.error)}));
 const putMeta=(key,value)=>tx(META,'readwrite',s=>s.put({key,value}));
-function inferKind(d){
- const text=[d.kind,d.type,d.name,d.document,d.source,d.fileName,d.filename].filter(Boolean).join(' ').toLowerCase();
- if(/gense[nb]|源泉|withholding/.test(text)) return 'withholding';
- if(/bonus|賞与/.test(text)) return 'bonus';
- if(/chinginmeisai|給与|賃金|payment\s*slip|salary/.test(text)) return 'salary';
- if(d.bonusAmount!=null||d.standardBonusAmounts||d.decreeAmount!=null) return 'bonus';
- if(d.taxableAmount!=null||d.paymentItems||d.deductionItems||d.baseSalaryBreakdown||d.workingRecord) return 'salary';
- return d.kind||d.type||'unknown';
-}
-function canonicalId(d){return `${d.year||0}-${d.kind||'unknown'}-${d.month??'annual'}-${String(d.document||d.name||d.source||'document').replace(/[^0-9A-Za-z_-]+/g,'_')}`}
-function makeId(d){return canonicalId(d)}
+function makeId(d){return d.id||`${d.year||0}-${d.kind||d.type||'document'}-${d.month??'annual'}-${d.document||d.name||Math.random().toString(36).slice(2)}`}
 function mapNested(d){
  const p=d.paymentItems||{}, q=d.deductionItems||{}, a=d.additionalPaymentItems||{}, w=d.workingRecord||{}, b=d.baseSalaryBreakdown||{}, sm=d.standardMonthlyRemuneration||{}, sb=d.standardBonusAmounts||{};
  const get=(obj,...keys)=>{for(const k of keys)if(obj[k]!=null)return obj[k];return null};
  const health=get(q,'健康保険料（基本','健康保険料（基本）'), healthSpecial=get(q,'健康保険料（特定','健康保険料（特定）');
- const out={...d}; out.kind=inferKind(out); out.name=out.name||out.document||`${out.year||''}-${out.month||''}`; out.payDate=out.payDate||out.payday||out.date||null; out.year=Number(out.year||String(out.payDate||'').slice(0,4)||0); out.month=out.month==null?null:Number(out.month);
+ const out={...d}; out.kind=out.kind||out.type||'unknown'; out.name=out.name||out.document||`${out.year||''}-${out.month||''}`; out.payDate=out.payDate||out.payday||out.date||null; out.year=Number(out.year||String(out.payDate||'').slice(0,4)||0); out.month=out.month==null?null:Number(out.month);
  if(out.kind==='salary'){
   out.totalPayment=out.totalPayment??null; out.taxable=out.taxable??out.taxableAmount??null; out.nonTaxable=out.nonTaxable??out.nonTaxableAmount??null; out.additional=out.additional??out.additionalPaymentTotal??null; out.net=out.net??out.netPayment??null;
   out.employment=out.employment??get(q,'雇用保険料'); out.health=out.health??health; out.healthSpecial=out.healthSpecial??healthSpecial; out.care=out.care??get(q,'介護保険料'); out.pension=out.pension??get(q,'年金保険料'); out.incomeTax=out.incomeTax??get(q,'所得税'); out.residentTax=out.residentTax??get(q,'住民税');
@@ -38,7 +28,7 @@ function mapNested(d){
  return out;
 }
 function normalizeDoc(raw,sourceName){
- const d=mapNested({...raw}); d.kind=inferKind(d); d.id=makeId(d); d.source=d.source||sourceName||'structured-json'; d.status=d.status||'parsed';
+ const d=mapNested({...raw}); d.id=makeId(d); d.source=d.source||sourceName||'structured-json'; d.status=d.status||'parsed';
  d.social=d.social==null?deriveSocial(d):num(d.social); d.needsReview=Boolean(d.needsReview);
  if(d.kind==='salary'){d.missingFields=[]; if(d.year<=0)d.missingFields.push('year'); if(d.month==null)d.missingFields.push('month'); if(d.taxable==null)d.missingFields.push('taxableAmount'); if(d.totalPayment==null)d.missingFields.push('totalPayment'); d.needsReview=d.missingFields.length>0;}
  return d;
@@ -91,29 +81,22 @@ function flattenReadFields(d){
  return rows;
 }
 function findItem(d,patterns){
- const all=[...(Object.entries(d.paymentItems||{})),...(Object.entries(d.additionalPaymentItems||{})),...(Object.entries(d.deductionItems||{}))];
+ const all=[...(Object.entries(d.paymentItems||{})),...(Object.entries(d.additionalPaymentItems||{}))];
  for(const [k,v] of all){if(patterns.some(p=>String(k).includes(p)))return v}
  return null;
 }
 function yearTable(year,docs){
- const groups=[['salary','給与'],['bonus','賞与'],['withholding','源泉徴収票'],['unknown','その他・未分類']];
- const renderGroup=(kind,label)=>{
-  const rows=docs.filter(d=>d.kind===kind).slice().sort((a,b)=>(a.month||0)-(b.month||0)||(String(a.payDate||'').localeCompare(String(b.payDate||''))));
-  if(!rows.length)return '';
-  const main=rows.map(d=>{
+ const rows=docs.slice().sort((a,b)=>(a.month||0)-(b.month||0));
+ const main=rows.map(d=>{
    const stock=findItem(d,['持株会','持株補助','持株']);
    const stockSub=findItem(d,['持株補助']);
-   return `<tr><td>${esc(d.month?`${d.month}月`:d.payDate||d.name||'—')}</td><td>${esc(d.name||d.document||'—')}</td><td>${fmtCell(d.taxable??d.taxableAmount)}</td><td>${fmtCell(d.totalPayment)}</td><td>${fmtCell(d.nonTaxable??d.nonTaxableAmount)}</td><td>${fmtCell(d.employment)}</td><td>${fmtCell(d.health)}</td><td>${fmtCell(d.healthSpecial)}</td><td>${fmtCell(d.care)}</td><td>${fmtCell(d.pension)}</td><td>${fmtCell(d.childSupport)}</td><td>${fmtCell(d.social)}</td><td>${fmtCell(d.incomeTax??d.withholdingTax)}</td><td>${fmtCell(d.residentTax)}</td><td>${fmtCell(d.additional??d.additionalPaymentTotal)}</td><td>${fmtCell(stock)}</td><td>${fmtCell(stockSub)}</td><td>${d.needsReview?'<span class="warn">要確認</span>':'<span class="ok">OK</span>'}</td></tr>`;
-  }).join('');
-  const allItems=rows.map(d=>{
+   return `<tr><td>${esc(d.month?`${d.month}月`:d.payDate||d.name||'—')}</td><td>${esc(kindLabel(d.kind))}</td><td>${esc(d.name||d.document||'—')}</td><td>${fmtCell(d.taxable??d.taxableAmount)}</td><td>${fmtCell(d.totalPayment)}</td><td>${fmtCell(d.nonTaxable??d.nonTaxableAmount)}</td><td>${fmtCell(d.employment)}</td><td>${fmtCell(d.health)}</td><td>${fmtCell(d.healthSpecial)}</td><td>${fmtCell(d.care)}</td><td>${fmtCell(d.pension)}</td><td>${fmtCell(d.childSupport)}</td><td>${fmtCell(d.social)}</td><td>${fmtCell(d.incomeTax??d.withholdingTax)}</td><td>${fmtCell(d.residentTax)}</td><td>${fmtCell(d.additional??d.additionalPaymentTotal)}</td><td>${fmtCell(stock)}</td><td>${fmtCell(stockSub)}</td><td>${d.needsReview?'<span class="warn">要確認</span>':'<span class="ok">OK</span>'}</td></tr>`;
+ }).join('');
+ const allItems=rows.map(d=>{
    const fields=flattenReadFields(d);
-   const missing=fields.filter(x=>x.value==null||x.value==='').length;
-   return `<details class="read-detail"><summary>${esc(d.month?`${d.month}月`:d.payDate||d.name||'資料')}：${label}／読み取った項目 ${fields.length}項目${missing?'／空欄・未取得あり':''}</summary><div class="tablewrap"><table class="readtable full"><thead><tr><th>区分</th><th>項目名</th><th>読み取り値</th></tr></thead><tbody>${fields.map(x=>`<tr><td>${esc(x.section)}</td><td>${esc(x.key)}</td><td>${fmtCell(x.value)}</td></tr>`).join('')}</tbody></table></div><details><summary>原文テキストを確認</summary><pre>${escapeHtml(String(d.rawText||'原文保存なし'))}</pre></details></details>`;
-  }).join('');
-  const cols=kind==='withholding'?'支払金額／給与所得控除後／所得控除／源泉徴収税額など':kind==='bonus'?'賞与額／社会保険料各内訳／所得税／標準賞与額など':'課税対象額／支給合計／非課税額／社会保険各内訳／税／追加支給／持株会など';
-  return `<h3>${label}（${rows.length}件）</h3><p class="small">${cols}</p><div class="tablewrap"><table class="readtable"><thead><tr><th>月/日</th><th>資料</th><th>課税対象額</th><th>支給合計</th><th>非課税額</th><th>雇用</th><th>健康</th><th>健康特定</th><th>介護</th><th>厚年</th><th>子育て支援</th><th>社会保険計</th><th>所得税</th><th>住民税</th><th>追加支給</th><th>持株会</th><th>持株補助</th><th>状態</th></tr></thead><tbody>${main}</tbody></table></div>${allItems}`;
- };
- return `<details class="yearblock" open><summary><strong>${year}年</strong>　給与・賞与・源泉徴収票を分離表示</summary>${groups.map(g=>renderGroup(g[0],g[1])).join('')}</details>`;
+   return `<details class="read-detail"><summary>${esc(d.month?`${d.month}月`:d.payDate||d.name||'資料')}：読み取った全項目 ${fields.length}項目</summary><div class="tablewrap"><table class="readtable full"><thead><tr><th>区分</th><th>項目名</th><th>読み取り値</th></tr></thead><tbody>${fields.map(x=>`<tr><td>${esc(x.section)}</td><td>${esc(x.key)}</td><td>${fmtCell(x.value)}</td></tr>`).join('')}</tbody></table></div></details>`;
+ }).join('');
+ return `<details class="yearblock" open><summary><strong>${year}年</strong>　${rows.length}資料</summary><div class="tablewrap"><table class="readtable"><thead><tr><th>月/日</th><th>種別</th><th>資料</th><th>課税対象額</th><th>支給合計</th><th>非課税額</th><th>雇用</th><th>健康</th><th>健康特定</th><th>介護</th><th>厚年</th><th>子育て支援</th><th>社会保険計</th><th>所得税</th><th>住民税</th><th>追加支給</th><th>持株会</th><th>持株補助</th><th>状態</th></tr></thead><tbody>${main}</tbody></table></div><p class="small">下の各資料を開くと、JSON化された保存データのうち、画面で確認できる全ての読み取り項目を表形式で確認できます。</p>${allItems}</details>`;
 }
 function kindLabel(k){return k==='salary'?'給与':k==='bonus'?'賞与':k==='withholding'?'源泉徴収票':k||'unknown'}
 function renderYearTables(docs){
@@ -127,19 +110,6 @@ $('saveManual').onclick=saveManual;$('manualYear').onchange=renderManual;documen
 $('exportDb').onclick=()=>download('furusato_db.json',JSON.stringify({version:1,documents:state.documents,manual:state.manual},null,2));$('exportLog').onclick=()=>download('furusato_debug.txt',state.logs.map(x=>JSON.stringify(x)).join('\n'));$('clearDb').onclick=async()=>{if(confirm('保存データと手動入力を消去しますか？')){const db=await openDB();await new Promise((res,rej)=>{const t=db.transaction([DOCS,LOGS,META],'readwrite');t.objectStore(DOCS).clear();t.objectStore(LOGS).clear();t.objectStore(META).clear();t.oncomplete=res;t.onerror=()=>rej(t.error)});state={documents:[],logs:[],manual:{}};render();showMessage('消去しました','ok')}};
 function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 state.documents=await allDocs();state.logs=await allLogs();state.manual=await getMeta('manual')||{};
-// Migrate old imported records. Classification is driven by the actual document name: Chinginmeisai=給与, Bonus=賞与, Gensen/Genseb=源泉徴収票.
-const migrated=new Map();
-for(const old of state.documents){
- const n=normalizeDoc(old,old.source||'migrated');
- const key=n.id;
- const prev=migrated.get(key);
- if(!prev || (prev.kind==='unknown' && n.kind!=='unknown')) migrated.set(key,n);
-}
-const oldIds=new Set(state.documents.map(d=>d.id));
-for(const old of state.documents){if(!migrated.has(old.id)) await tx(DOCS,'readwrite',s=>s.delete(old.id));}
-for(const n of migrated.values()) await putDoc(n);
-state.documents=await allDocs();
-// Remove legacy duplicate IDs after canonical reclassification.
-const canonicalIds=new Set([...migrated.values()].map(d=>d.id));
-for(const old of state.documents){if(old.id && !canonicalIds.has(old.id) && old.source==='migrated') await tx(DOCS,'readwrite',s=>s.delete(old.id));}
+// Migrate old imported records such as type:'salary' / nested 2024 JSON so they stop showing as unknown.
+for(const d of [...state.documents]){const n=normalizeDoc(d,'migrated');if(JSON.stringify(n)!==JSON.stringify(d))await putDoc(n)}
 state.documents=await allDocs();render();
