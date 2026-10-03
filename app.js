@@ -45,6 +45,12 @@ function mapNested(d){
   out.earthquakeInsuranceDeduction=out.earthquakeInsuranceDeduction??out.地震保険料の控除額??null;
   out.incomeAdjustment=out.incomeAdjustment??out.incomeAdjustmentDeduction??out.所得金額調整控除額??null;
   out.specialDependent=out.specialDependent??out.specialDependentDeduction??out.特定親族特別控除の額??null;
+  // 源泉徴収票の「控除対象扶養親族等の数」のOCR証拠から、
+  // 「その他」の人数をDBにも明示保存する。既存の0/null値より帳票上の人数を優先する。
+  const dc=parseDependentCountsFromEvidence(out.dependentCountEvidence);
+  if(dc.general!=null) out.dependentGeneralCount=dc.general;
+  if(dc.specific!=null) out.dependentSpecificCount=dc.specific;
+  if(dc.special!=null) out.specialDependentCount=dc.special;
  }
  return out;
 }
@@ -98,7 +104,7 @@ function sourceEarthFromWithholding(w){const direct=pickNum(w,['earthquakeInsura
 function sourceDeductionResidual(w,year){if(!w||w.deductionsTotal==null)return 0;const social=num(w.socialInsurance??w.social), basic=sourceBasicFromWithholding(w,year,num(w.salaryIncomeAfterDeduction)), life=sourceLifeFromWithholding(w,year), earth=sourceEarthFromWithholding(w);return Math.max(0,num(w.deductionsTotal)-social-basic-life-earth)}
 function sourceIdecoFromWithholding(w){return pickNum(w,['ideco','iDeCo','小規模企業共済等掛金','小規模企業共済等掛金控除','smallBusinessMutualAid'])}
 function parseDependentCountsFromEvidence(evidence){
- const s=String(evidence||'').replace(/\s+/g,'');
+ const s=String(evidence||'').replace(/\s+/g,'').replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xfee0));
  let general=null,specific=null,elderly=null,cohabitingElderly=null,special=null;
  // OCRされた源泉徴収票では、見出し「老人・その他・特定・老人・その他・特親」の
  // 下に人数が連結されるため、ラベルそのものだけでなく数値列も読む。
@@ -108,11 +114,11 @@ function parseDependentCountsFromEvidence(evidence){
    if(/人11特定親族/.test(s) || /人０?１1特定親族/.test(s)) general=1;
    if(/11特定親族/.test(s)) special=1;
  }
- // より一般的に、特親の直前に連続している2桁の人数を利用する。
- // ただし「特親=1」の推定だけは特定親族特別控除額が別途存在する場合に限定する。
+ // OCRでは「その他」と「特親」の人数が連結されて「人11特定親族」となる。
+ // この帳票では直前の2桁が「その他=1」「特親=1」を表すため、ここを明示的に読む。
  if(general==null){
-   const m=s.match(/(?:人|内人)\s*([0-9０-９])([0-9０-９])特定親族/);
-   if(m) general=Number(m[1].replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xfee0)));
+   const m=s.match(/人([0-9])([0-9])特定親族/);
+   if(m) general=Number(m[1]);
  }
  if(special==null){
    const m=s.match(/(?:人|内人)\s*([0-9０-９])特定親族特別控除の額/);
