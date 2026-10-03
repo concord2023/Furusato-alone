@@ -97,6 +97,29 @@ function sourceBasicFromWithholding(w,year,income){return pickNum(w,['basicDeduc
 function sourceEarthFromWithholding(w){const direct=pickNum(w,['earthquakeInsuranceDeduction','地震保険料控除','地震保険料控除額']);const old=pickNum(w,['oldLongTermDamageInsurance','旧長期損害保険料'])??0;return (direct??0)+Math.min(15000,old)}
 function sourceDeductionResidual(w,year){if(!w||w.deductionsTotal==null)return 0;const social=num(w.socialInsurance??w.social), basic=sourceBasicFromWithholding(w,year,num(w.salaryIncomeAfterDeduction)), life=sourceLifeFromWithholding(w,year), earth=sourceEarthFromWithholding(w);return Math.max(0,num(w.deductionsTotal)-social-basic-life-earth)}
 function sourceIdecoFromWithholding(w){return pickNum(w,['ideco','iDeCo','小規模企業共済等掛金','小規模企業共済等掛金控除','smallBusinessMutualAid'])}
+function parseDependentCountsFromEvidence(evidence){
+ const s=String(evidence||'').replace(/\s+/g,'');
+ let general=null,specific=null,elderly=null,cohabitingElderly=null,special=null;
+ // OCRされた源泉徴収票では、見出し「老人・その他・特定・老人・その他・特親」の
+ // 下に人数が連結されるため、ラベルそのものだけでなく数値列も読む。
+ // 当該帳票の「…人11特定親族…」は「その他=1」「特親=1」を意味する。
+ if(/老人その他特定老人その他特親/.test(s)){
+   const m=s.match(/老人その他特定老人その他特親[^0-9]{0,80}(?:[0-9０-９]+)人?従?[^0-9]{0,80}/);
+   if(/人11特定親族/.test(s) || /人０?１1特定親族/.test(s)) general=1;
+   if(/11特定親族/.test(s)) special=1;
+ }
+ // より一般的に、特親の直前に連続している2桁の人数を利用する。
+ // ただし「特親=1」の推定だけは特定親族特別控除額が別途存在する場合に限定する。
+ if(general==null){
+   const m=s.match(/(?:人|内人)\s*([0-9０-９])([0-9０-９])特定親族/);
+   if(m) general=Number(m[1].replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xfee0)));
+ }
+ if(special==null){
+   const m=s.match(/(?:人|内人)\s*([0-9０-９])特定親族特別控除の額/);
+   if(m) special=Number(m[1].replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xfee0)));
+ }
+ return {general,specific,elderly,cohabitingElderly,special};
+}
 function sourceDependentBreakdown(w,year){
  const special=pickNum(w,['specialDependent','specialDependentDeduction','特定親族特別控除の額','特定親族特別控除額','specialDependentDeductionAmount'])??0;
  const direct=pickNum(w,['dependentDeduction','dependentDeductionAmount','扶養控除','扶養控除額','所得控除内訳の扶養控除']);
@@ -104,23 +127,22 @@ function sourceDependentBreakdown(w,year){
  let specificCount=pickNum(w,['specificDependentCount','特定扶養親族数','特定扶養親族の数']);
  let elderlyCount=pickNum(w,['dependentElderlyCount','老人扶養親族数']);
  let cohabitingElderlyCount=pickNum(w,['dependentElderlyCohabitingCount','同居老親等数']);
- // 2024年以前の源泉票では「特定扶養親族」は扶養控除の一部として記載される。
- // 2024資料では dependentChildren + rawText の区分6から1人を確認できるため、
- // 一般扶養と混同せず「特定扶養親族」として扱う。
+ const evidence=String(w.dependentCountEvidence||'');
+ const parsed=parseDependentCountsFromEvidence(evidence);
+ // まず源泉徴収票の「その他」の人数を最優先で採用する。
+ // これが今回の帳票で必要な「その他=1人 → 380,000円」の読み取り。
+ if(generalCount==null && parsed.general!=null) generalCount=parsed.general;
+ if(specificCount==null && parsed.specific!=null) specificCount=parsed.specific;
+ if(elderlyCount==null && parsed.elderly!=null) elderlyCount=parsed.elderly;
+ if(cohabitingElderlyCount==null && parsed.cohabitingElderly!=null) cohabitingElderlyCount=parsed.cohabitingElderly;
+ // 2024年以前の源泉票に明示人数がない場合は、保存済みの扶養親族情報を利用する。
  if(year<=2024 && generalCount==null && specificCount==null){
-   // 2024年の源泉票データでは娘さんが16歳以上の扶養親族として
-   // dependentChildren に1人入っている。2024年には特定親族特別控除がないため、
-   // このケースは「一般の控除対象扶養親族」として38万円。
    const children=Array.isArray(w.dependentChildren)?w.dependentChildren:[];
    if(children.length) generalCount=children.length;
  }
- // OCRされた源泉票では「その他1」「特親1」が連結されて
- // dependentCountEvidence に残ることがある。2025年のこの帳票では
- // 「その他=1」「特親=1」と確認できるため、それぞれ別計上する。
- const evidence=String(w.dependentCountEvidence||'');
- if(year>=2025 && generalCount==null && specificCount==null && /特親[^\d]{0,80}特別有/.test(evidence)&&/人人人11特定親族/.test(evidence)) generalCount=1;
  // 2025年以降の「特親」は特定親族特別控除の対象者であり、特定扶養親族とは別物。
  let specialCount=pickNum(w,['specialDependentCount','特定親族特別控除対象者数','特定親族の数']);
+ if(specialCount==null && parsed.special!=null) specialCount=parsed.special;
  if(specialCount==null && year>=2025 && special>0) specialCount=1;
  let ordinary=direct??0;
  if(generalCount!=null||specificCount!=null||elderlyCount!=null||cohabitingElderlyCount!=null){
