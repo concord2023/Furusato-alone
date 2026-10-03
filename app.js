@@ -166,9 +166,7 @@ function sourceAdjustmentFromWithholding(w,year,m,payment){
 function basisOn(m,key,side){return Boolean(m.basis?.[key]?.[side])}
 function calcBasisSide(w,year,m,side,includeComparison=false){
  const salaryRef=forecastSalaryBonus(state.documents||[],year);
- // 給与・賞与ベースの年間支給額は、予測計算で確定した totalIncome から手動加算分だけ除いて取得する。
- // yearSalary と bonusTotal を別経路で再加算しないため、給与・賞与の二重加算を防止する。
- const salaryBasePayment=salaryRef?Math.max(0,num(salaryRef.totalIncome)-num(salaryRef.comparison?.paymentManualAddition)):0;
+ const salaryBasePayment=salaryRef?salaryRef.yearSalary+salaryRef.bonusTotal:0;
  const sourceBasePayment=pickNum(w,['paymentAmount','annualSalary','totalPayment','支払金額','支払金額合計','支払金額の合計'])??0;
  const sourceIncomeOriginal=pickNum(w,['salaryIncomeAfterDeduction','給与所得控除後の金額（調整控除後）','給与所得控除後の金額','給与所得'])??Math.max(0,sourceBasePayment-salaryDeduction(sourceBasePayment,year));
  const sourceIncomeIsAdjusted=pickNum(w,['salaryIncomeAfterDeduction','給与所得控除後の金額（調整控除後）'])!=null;
@@ -297,189 +295,27 @@ function renderLogs(){
 }
 function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 $('reflectJson').onclick=async()=>{try{await importJsonText($('jsonInput').value);$('jsonInput').value=''}catch(e){showMessage('反映できません：'+e.message,'error')}};
-$('copyPrompt').onclick=async()=>{const prompt=`【ふるさと納税アプリ用・最新版 JSON作成依頼】
+$('copyPrompt').onclick=async()=>{const prompt=`【ふるさと納税アプリからの更新依頼】
 
-Libraryにある最新資料と、既存のアプリ用データを比較し、重複を除外したうえで、アプリへ取り込むJSONを作成してください。
+この文章を受け取った場合、これは「ふるさと納税アプリ」の正式なデータ更新依頼として扱ってください。
+Libraryの最新資料と既存のアプリ用データを照合し、重複・差分を確認したうえで、アプリへ取り込むJSONを作成してください。
 
-■1. 基本ルール
-1. Libraryの最新資料と既存データを照合し、同一資料・同一内容の重複を除外してください。
-2. 新しい資料で既存データを置き換える場合は、同一資料であることを確認してから置き換えてください。
-3. 給与明細・賞与明細・源泉徴収票は、原文に記載された項目を省略せず、可能な限り全項目を構造化して保存してください。
-4. JSONは必ず次の形式で返してください。
-   {"version":1,"documents":[...]}
-5. JSONはアプリが直接読む構造化データです。アプリ側でPDF/OCRの文字列を再解釈して計算する前提にしないでください。
-6. 読み取れない項目は推測して埋めず、nullまたは要確認として扱ってください。
-7. 資料にない値を、前年データ・別資料・計算結果から勝手に補完しないでください。
-8. 年度・資料種別・対象月を正確に保持してください。
-9. 手動入力値は元資料のJSONに勝手に埋め込まないでください。
+【必須ルール】
+- 給与明細・賞与明細・源泉徴収票は、原文にある項目を省略せず構造化して保存する。
+- 読み取れない値は推測せずnullまたは要確認とし、前年・別資料・計算結果から勝手に補完しない。
+- 年度・資料種別・対象月を正確に保持し、その年度の制度に従う。
+- 個人名・氏名は読み取らず、JSONにも保存しない。氏名や推測情報から扶養区分を判断しない。
+- 源泉徴収票の扶養人数は原文の人数欄から読み取り、dependentGeneralCount / dependentSpecificCount / specialDependentCount / specialDependent を別々に保持する。
+- 「特定扶養親族」と「特定親族特別控除」は別制度として扱い、人数・金額を混同しない。
+- その年度に存在しない制度・項目を勝手に適用しない。
+- 手動入力値は資料JSONへ混ぜない。所得金額調整控除も手動入力値にしない。
+- 源泉徴収票ベースと給与・賞与の実績＋予測ベースは完全に分離し、相互に混ぜたり二重計上したりしない。
+- 同一資料を二重登録せず、新資料で置き換える場合も同一資料であることを確認する。
 
-■2. 個人名・個人識別情報
-1. 個人名・氏名は読み取らず、JSONにも保存しないでください。
-2. 扶養親族についても氏名を保存しないでください。
-3. 扶養区分は氏名から判断してはいけません。
-4. 資料中に氏名が存在していても、扶養人数の判定には使用しないでください。
-
-■3. 源泉徴収票の扶養人数
-源泉徴収票の「控除対象扶養親族等の数」欄を直接読み取ってください。
-
-以下を必ず独立したJSON項目として保持してください。
-- dependentGeneralCount：一般扶養親族の人数
-- dependentSpecificCount：特定扶養親族の人数
-- specialDependentCount：特定親族特別控除の対象人数
-- specialDependent：特定親族特別控除額
-
-重要：
-- 個人名から扶養区分を判断しない。
-- dependentChildren等の別情報から扶養区分を推測しない。
-- 一般扶養と特定扶養を合計して1項目にしない。
-- 特定扶養と特定親族特別控除を同じ項目として扱わない。
-- 人数欄が読み取れない場合は、推測して0にせずnullまたは要確認とする。
-- 年分によって制度が存在しない場合は、その制度を無理に適用しない。
-- 例：2024年分には特定親族特別控除制度はないため、specialDependentCount=0、specialDependent=0とする。
-- 2024年分の例として、一般扶養1人・特定扶養1人なら
-  {"dependentGeneralCount":1,"dependentSpecificCount":1,"specialDependentCount":0,"specialDependent":0}
-  とし、氏名情報は保存しない。
-
-■4. 源泉徴収票の原文項目
-少なくとも以下を独立項目として保持し、これ以外も原文に存在する項目は省略しないでください。
-- 支払金額
-- 給与所得控除後の金額
-- 所得控除の額の合計額
-- 源泉徴収税額
-- 社会保険料等の金額
-- 生命保険料の控除額
-- 地震保険料の控除額
-- 住宅借入金等特別控除の額
-- 基礎控除
-- 所得金額調整控除
-- 一般扶養親族人数
-- 特定扶養親族人数
-- 特定親族特別控除対象人数
-- 特定親族特別控除額
-- 配偶者関係の人数・有無・控除額など、原文にある関連項目
-- 障害者関係など、原文にあるその他の項目
-- その他、源泉徴収票原文にあるすべての項目
-
-■5. 給与明細・賞与明細
-給与明細・賞与明細は原文の項目を省略せず保存してください。
-
-特に以下を区別してください。
-- 支給額・給与
-- 課税支給額
-- 非課税支給額
-- 社会保険料
-- 健康保険
-- 介護保険
-- 厚生年金
-- 雇用保険
-- その他の社会保険項目
-- 所得税
-- 住民税
-- その他の控除
-- 特別支給・追加支給等
-- その他、原文に存在するすべての項目
-
-給与明細と賞与明細を混同しないでください。
-
-■6. 源泉徴収票ベースと給与・賞与ベースを完全に分離
-源泉徴収票が存在する年度でも、次の2系統を独立して計算できるようにしてください。
-
-A. 源泉徴収票ベース
-- 源泉徴収票に記載された実績値を使用する。
-- 源泉徴収票の所得・控除・社会保険・扶養等をこの系統で使用する。
-
-B. 給与・賞与実績＋予測ベース
-- 給与明細・賞与明細の実績を使用する。
-- 未到来月など不足分はアプリの予測ルールで補完する。
-- 源泉徴収票の年間値をこの系統へ勝手に混ぜない。
-
-AとBを足し合わせたり、片方の年間値で他方を上書きしたりしないでください。
-
-源泉徴収票がない年度は、給与・賞与実績＋予測ベースで計算できるようにしてください。
-
-■7. 手動入力
-手動入力は元資料JSONとは分離してください。
-
-アプリ側では、手動入力項目ごとに
-- 源泉徴収票ベースへ反映
-- 給与・賞与実績＋予測ベースへ反映
-を独立して設定できるようにしてください。
-
-同じ手動入力値を両方に反映する設定にした場合でも、AとBを別々に計算し、A+Bのように二重計上しないでください。
-
-手動入力対象として扱う項目は、少なくとも以下です。
-- 特別支給等給与加算
-- 生命保険料控除
-- 地震・旧長期損害保険料控除
-- iDeCo・小規模企業共済等
-- 本人の国民年金
-- 娘の国民年金
-- 扶養・特定親族等
-
-所得金額調整控除は手動入力項目にしないでください。
-
-■8. 所得金額調整控除
-所得金額調整控除は、手動入力値として作成・保存しないでください。
-
-年分・年収・適用要件からアプリ側で自動計算できるよう、計算に必要な事実データを保存してください。
-
-源泉徴収票に所得金額調整控除が記載されている場合は、原文に記載された値を実績データとして保存してください。ただし、それを手動入力値として扱ったり、給与・賞与側へ無条件に転記したりしないでください。
-
-給与所得控除後の金額（調整控除後）が源泉徴収票に記載されている場合も、その原文値をそのまま保持してください。
-
-■9. 特定扶養と特定親族特別控除
-「特定扶養親族」と「特定親族特別控除」は別制度です。
-
-必ず別々に扱ってください。
-
-- dependentSpecificCount：特定扶養親族の人数
-- specialDependentCount：特定親族特別控除の対象人数
-- specialDependent：特定親族特別控除額
-
-特定扶養親族の人数を、特定親族特別控除の人数として流用しないでください。
-逆も同様です。
-
-■10. 年度別制度
-税制・控除制度は年分によって異なるため、対象年の制度に従って保存してください。
-
-存在しない年度の制度を過去年度へ遡って適用しないでください。
-特定親族特別控除など、制度開始年度があるものは開始前年度には適用しないでください。
-
-■11. JSON作成時の禁止事項
-- 氏名から扶養区分を推測すること
-- dependentChildren等から扶養区分を推測すること
-- 読み取れない人数を0と決めつけること
-- 前年の値を今年の資料に勝手に補完すること
-- 源泉徴収票の値を給与・賞与側へ勝手に混ぜること
-- 給与・賞与の値を源泉徴収票側へ勝手に混ぜること
-- 手動入力値を元資料JSONへ埋め込むこと
-- 「特定扶養」と「特定親族特別控除」を同一項目にすること
-- 原文にある項目を不要と判断して削除すること
-- 個人名をJSONに保存すること
-
-■12. 最終確認
-JSONを返す前に必ず確認してください。
-- Library最新資料と既存データの重複が除外されているか
-- 同一資料を二重登録していないか
-- 年度が正しいか
-- 給与・賞与・源泉徴収票を取り違えていないか
-- 給与明細・賞与明細の原文項目を省略していないか
-- 源泉徴収票の原文項目を省略していないか
-- 一般扶養と特定扶養が分離されているか
-- 特定扶養と特定親族特別控除が分離されているか
-- 扶養人数を氏名から判断していないか
-- 個人名がJSONに入っていないか
-- 読み取れない値を推測していないか
-- 前年・別資料・計算結果から勝手に補完していないか
-- 手動入力値を元資料JSONへ混ぜていないか
-- 源泉徴収票ベースと給与・賞与ベースが独立しているか
-- 所得金額調整控除を手動入力として扱っていないか
-- 年度に存在しない制度を適用していないか
-
-■13. 出力形式
-最終的には、アプリがそのまま取り込めるJSONだけを、必ず次の形式で返してください。
-
-{"version":1,"documents":[...]}`;await navigator.clipboard.writeText(prompt);showMessage('ChatGPTへの依頼文をコピーしました。','ok')};
+【出力】
+説明文は付けず、アプリがそのまま取り込めるJSONだけを返してください。
+形式は必ず次のとおりです。
+{"version":1,"documents":[...]}`;await navigator.clipboard.writeText(prompt);showMessage('ChatGPTへの更新依頼文をコピーしました。','ok')};
 $('saveManual').onclick=saveManual;$('manualYear').onchange=()=>{activeYear=num($('manualYear').value)||2026;localStorage.setItem('furusatoActiveYear',String(activeYear));renderManual();render()};document.querySelectorAll('#manualForm input').forEach(e=>e.addEventListener('input',updateManualCalc));document.querySelectorAll('#manualForm input[type=checkbox]').forEach(e=>e.addEventListener('change',async()=>{if(e.id.startsWith('basis')){const y=num($('manualYear')?.value)||activeYear||2026;const m=readManualForm();state.manual[String(y)]=m;await putMeta('manual',state.manual);localStorage.setItem('furusatoManualBackup',JSON.stringify(state.manual));activeYear=y;localStorage.setItem('furusatoActiveYear',String(y));state.logs=await allLogs();render();}else updateManualCalc();}));document.addEventListener('click',e=>{const tab=e.target.closest('.year-tab');if(tab){activeYear=num(tab.dataset.year)||2026;localStorage.setItem('furusatoActiveYear',String(activeYear));if($('manualYear'))$('manualYear').value=String(activeYear);renderManual();render()}const logtab=e.target.closest('.logtab');if(logtab){document.querySelectorAll('.logtab').forEach(b=>b.classList.toggle('active',b===logtab));document.querySelectorAll('[id^="logtab-"]').forEach(p=>p.hidden=p.id!==`logtab-${logtab.dataset.logtab}`)}});
 $('exportDb').onclick=()=>download('furusato_db.json',JSON.stringify({version:1,documents:state.documents},null,2));
 $('exportBackup').onclick=()=>download('furusato_restore.json',JSON.stringify({version:1,documents:state.documents,manual:state.manual},null,2));
