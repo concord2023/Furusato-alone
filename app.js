@@ -45,12 +45,11 @@ function mapNested(d){
   out.earthquakeInsuranceDeduction=out.earthquakeInsuranceDeduction??out.地震保険料の控除額??null;
   out.incomeAdjustment=out.incomeAdjustment??out.incomeAdjustmentDeduction??out.所得金額調整控除額??null;
   out.specialDependent=out.specialDependent??out.specialDependentDeduction??out.特定親族特別控除の額??null;
-  // 源泉徴収票の「控除対象扶養親族等の数」のOCR証拠から、
-  // 「その他」の人数をDBにも明示保存する。既存の0/null値より帳票上の人数を優先する。
-  const dc=parseDependentCountsFromEvidence(out.dependentCountEvidence);
-  if(dc.general!=null) out.dependentGeneralCount=dc.general;
-  if(dc.specific!=null) out.dependentSpecificCount=dc.specific;
-  if(dc.special!=null) out.specialDependentCount=dc.special;
+  // 扶養人数は、読み取り済みJSONの構造化フィールドをそのまま保存する。
+  // アプリ側で帳票の証拠文字列を再解析しない。
+  out.dependentGeneralCount=out.dependentGeneralCount??out.generalDependentCount??out.一般扶養親族数??out.その他扶養親族数??null;
+  out.dependentSpecificCount=out.dependentSpecificCount??out.specificDependentCount??out.特定扶養親族数??out.特定扶養親族の数??null;
+  out.specialDependentCount=out.specialDependentCount??out.特定親族特別控除対象者数??out.特定親族特別扶養人数??null;
  }
  return out;
 }
@@ -109,16 +108,25 @@ function sourceYearOf(d){const y=Number(d?.year||0);if(y>0)return y;const m=Stri
 function sourceWithholding(docs,year){
  const rows=docs.filter(d=>d.kind==='withholding'&&sourceYearOf(d)===Number(year)&&!d.needsReview);
  if(!rows.length)return null;
- const w=rows.slice().sort((a,b)=>Number(b.month||0)-Number(a.month||0))[0];
- // IndexedDBに旧版の0/nullが残っていても、毎回源泉票のOCR証拠から人数を再抽出する。
- const parsed=parseDependentCountsFromEvidence(w.dependentCountEvidence);
- const out={...w};
- if(parsed.general!=null)out.dependentGeneralCount=parsed.general;
- if(parsed.specific!=null)out.dependentSpecificCount=parsed.specific;
- if(parsed.elderly!=null)out.dependentElderlyCount=parsed.elderly;
- if(parsed.cohabitingElderly!=null)out.dependentElderlyCohabitingCount=parsed.cohabitingElderly;
- if(parsed.special!=null)out.specialDependentCount=parsed.special;
- return out;
+ // 同年度に複数の源泉徴収票レコードがある場合は、構造化された扶養人数と
+ // 源泉票の主要金額を多く持つレコードを優先する。証拠文字列の再解析はしない。
+ const score=d=>{
+   let n=0;
+   if(d.dependentGeneralCount!=null)n+=20;
+   if(d.dependentSpecificCount!=null)n+=20;
+   if(d.specialDependentCount!=null)n+=20;
+   if(d.specialDependent!=null)n+=10;
+   if(d.annualSalary!=null)n+=2;
+   return n;
+ };
+ const ordered=rows.slice().sort((a,b)=>score(b)-score(a)||Number(b.month||0)-Number(a.month||0));
+ const w={...ordered[0]};
+ for(const d of ordered.slice(1)){
+   for(const [k,v] of Object.entries(d)){
+     if((w[k]==null||w[k]==='')&&v!=null&&v!=='')w[k]=v;
+   }
+ }
+ return w;
 }
 function pickNum(obj,keys){for(const k of keys){if(obj&&obj[k]!=null&&obj[k]!=='')return num(obj[k])}return null}
 function sourceLifeFromWithholding(w,year){
@@ -132,58 +140,22 @@ function sourceBasicFromWithholding(w,year,income){return pickNum(w,['basicDeduc
 function sourceEarthFromWithholding(w){const direct=pickNum(w,['earthquakeInsuranceDeduction','地震保険料控除','地震保険料控除額']);const old=pickNum(w,['oldLongTermDamageInsurance','旧長期損害保険料'])??0;return (direct??0)+Math.min(15000,old)}
 function sourceDeductionResidual(w,year){if(!w||w.deductionsTotal==null)return 0;const social=num(w.socialInsurance??w.social), basic=sourceBasicFromWithholding(w,year,num(w.salaryIncomeAfterDeduction)), life=sourceLifeFromWithholding(w,year), earth=sourceEarthFromWithholding(w);return Math.max(0,num(w.deductionsTotal)-social-basic-life-earth)}
 function sourceIdecoFromWithholding(w){return pickNum(w,['ideco','iDeCo','小規模企業共済等掛金','小規模企業共済等掛金控除','smallBusinessMutualAid'])}
-function parseDependentCountsFromEvidence(evidence){
- const s=String(evidence||'').replace(/\s+/g,'').replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xfee0));
- let general=null,specific=null,elderly=null,cohabitingElderly=null,special=null;
- // 源泉徴収票のOCRでは人数欄が連結される。今回の帳票は
- // 「老人 その他 特定 老人 その他 特親」の並びの直後に
- // 「…人11特定親族…」と入り、最初の1が「その他」、次の1が「特親」。
- const m=s.match(/人([0-9])([0-9])特定親族/);
- if(m){general=Number(m[1]);special=Number(m[2]);}
- // 別形式で「その他1」が残る場合にも対応。
- if(general==null){
-   const m2=s.match(/その他[^0-9]{0,20}([0-9])(?:人)?(?:特|特親)/);
-   if(m2)general=Number(m2[1]);
- }
- if(special==null){
-   const m3=s.match(/(?:特親|特定親族)[^0-9]{0,20}([0-9])(?:人)?(?:特別控除|特別有)/);
-   if(m3)special=Number(m3[1]);
- }
- return {general,specific,elderly,cohabitingElderly,special};
-}
-
 function sourceDependentBreakdown(w,year){
  const special=pickNum(w,['specialDependent','specialDependentDeduction','特定親族特別控除の額','特定親族特別控除額','specialDependentDeductionAmount'])??0;
  const direct=pickNum(w,['dependentDeduction','dependentDeductionAmount','扶養控除','扶養控除額','所得控除内訳の扶養控除']);
- let generalCount=pickNum(w,['dependentGeneralCount','generalDependentCount','扶養親族数','一般扶養親族数','その他扶養親族数']);
- let specificCount=pickNum(w,['specificDependentCount','特定扶養親族数','特定扶養親族の数']);
- let elderlyCount=pickNum(w,['dependentElderlyCount','老人扶養親族数']);
- let cohabitingElderlyCount=pickNum(w,['dependentElderlyCohabitingCount','同居老親等数']);
- const evidence=String(w.dependentCountEvidence||'');
- const parsed=parseDependentCountsFromEvidence(evidence);
- // まず源泉徴収票の「その他」の人数を最優先で採用する。
- // これが今回の帳票で必要な「その他=1人 → 380,000円」の読み取り。
- // 源泉票のOCRから読めた人数を最優先する。既存JSONに0が残っていても、
- // 帳票上の「その他=1」などを0で上書きしない。
- if(parsed.general!=null) generalCount=parsed.general;
- if(parsed.specific!=null) specificCount=parsed.specific;
- if(parsed.elderly!=null) elderlyCount=parsed.elderly;
- if(parsed.cohabitingElderly!=null) cohabitingElderlyCount=parsed.cohabitingElderly;
- // 2024年以前の源泉票に明示人数がない場合は、保存済みの扶養親族情報を利用する。
- if(year<=2024 && generalCount==null && specificCount==null){
-   const children=Array.isArray(w.dependentChildren)?w.dependentChildren:[];
-   if(children.length) generalCount=children.length;
- }
- // 2025年以降の「特親」は特定親族特別控除の対象者であり、特定扶養親族とは別物。
- let specialCount=pickNum(w,['specialDependentCount','特定親族特別控除対象者数','特定親族の数']);
- if(specialCount==null && parsed.special!=null) specialCount=parsed.special;
- if(specialCount==null && year>=2025 && special>0) specialCount=1;
+ const generalCount=pickNum(w,['dependentGeneralCount','generalDependentCount','一般扶養親族数','その他扶養親族数'])??0;
+ const specificCount=pickNum(w,['dependentSpecificCount','specificDependentCount','特定扶養親族数','特定扶養親族の数'])??0;
+ const elderlyCount=pickNum(w,['dependentElderlyCount','老人扶養親族数'])??0;
+ const cohabitingElderlyCount=pickNum(w,['dependentElderlyCohabitingCount','同居老親等数'])??0;
+ // 2025年以降の「特親」は、特定扶養親族とは別の「特定親族特別控除」対象人数。
+ // 年ごとに制度が違うため、JSONの構造化フィールドをそのまま使用する。
+ const specialCount=year>=2025 ? (pickNum(w,['specialDependentCount','特定親族特別控除対象者数','特定親族特別扶養人数'])??0) : 0;
  let ordinary=direct??0;
- if(generalCount!=null||specificCount!=null||elderlyCount!=null||cohabitingElderlyCount!=null){
-   const g=Math.max(0,Math.floor(generalCount??0)), sp=Math.max(0,Math.floor(specificCount??0)), e=Math.max(0,Math.floor(elderlyCount??0)), c=Math.min(e,Math.max(0,Math.floor(cohabitingElderlyCount??0)));
+ if(generalCount||specificCount||elderlyCount||cohabitingElderlyCount){
+   const g=Math.max(0,Math.floor(generalCount)), sp=Math.max(0,Math.floor(specificCount)), e=Math.max(0,Math.floor(elderlyCount)), c=Math.min(e,Math.max(0,Math.floor(cohabitingElderlyCount)));
    ordinary=g*380000+sp*630000+Math.max(0,e-c)*480000+c*580000;
  }
- return {ordinary,special,total:ordinary+special,generalCount:generalCount??0,specificCount:specificCount??0,elderlyCount:elderlyCount??0,cohabitingElderlyCount:cohabitingElderlyCount??0,specialCount:specialCount??0};
+ return {ordinary,special,total:ordinary+special,generalCount,specificCount,elderlyCount,cohabitingElderlyCount,specialCount};
 }
 function sourceDependentFromWithholding(w,year){return sourceDependentBreakdown(w,year).total;}
 function sourceAdjustmentFromWithholding(w,year,m,payment){
@@ -347,19 +319,6 @@ for(const old of state.documents){
 const oldIds=new Set(state.documents.map(d=>d.id));
 for(const old of state.documents){if(!migrated.has(old.id)) await tx(DOCS,'readwrite',s=>s.delete(old.id));}
 for(const n of migrated.values()) await putDoc(n);
-state.documents=await allDocs();
-// Existing DB records imported from compact documents[] may lack the envelope's
-// withholding evidence. For the actual 2025 source form, the stored PDF/OCR
-// evidence is already represented by the explicit 18-year-old dependent record
-// when available; preserve it as a general dependent instead of displaying 0.
-for(const old of state.documents){
- if(old.kind!=='withholding' || Number(old.year)!==2025) continue;
- const hasGeneral=pickNum(old,['dependentGeneralCount','generalDependentCount','一般扶養親族数','その他扶養親族数']);
- if((hasGeneral==null||hasGeneral===0) && Array.isArray(old.dependentChildren) && old.dependentChildren.length){
-   const general=old.dependentChildren.filter(x=>Number(x.age)>=16&&Number(x.age)<=18 || Number(x.age)>=23).length;
-   if(general>0){old.dependentGeneralCount=general;await putDoc(old);}
- }
-}
 state.documents=await allDocs();
 // Remove legacy duplicate IDs after canonical reclassification.
 const canonicalIds=new Set([...migrated.values()].map(d=>d.id));
