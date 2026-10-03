@@ -22,29 +22,12 @@ function inferKind(d){
  if(d.taxableAmount!=null||d.paymentItems||d.deductionItems||d.baseSalaryBreakdown||d.workingRecord) return 'salary';
  return d.kind||d.type||'unknown';
 }
-function docIdentity(d){
- const y=Number(d?.year||0)||0, k=inferKind(d)||'unknown', m=d?.month==null?'annual':Number(d.month);
- const raw=String(d?.driveFileId||d?.document||d?.name||d?.fileName||d?.filename||'document');
- const base=raw.split(/[\\/]/).pop().replace(/\.(pdf|txt|json|csv)$/i,'').replace(/\s+/g,' ').trim().toLowerCase();
- return `${y}|${k}|${m}|${base}`;
-}
+function docIdentity(d){const y=Number(d?.year||0)||0,k=inferKind(d)||'unknown',m=d?.month==null?'annual':Number(d.month);const raw=String(d?.driveFileId||d?.document||d?.name||d?.fileName||d?.filename||'document');const base=raw.split(/[\\/]/).pop().replace(/\.(pdf|txt|json|csv)$/i,'').replace(/\s+/g,' ').trim().toLowerCase();return `${y}|${k}|${m}|${base}`}
 function canonicalId(d){return docIdentity(d).replace(/[^0-9A-Za-z_|.-]+/g,'_')}
 function makeId(d){return canonicalId(d)}
-function docRichness(d){
- let n=0; for(const [k,v] of Object.entries(d||{})){if(v!=null&&v!==''&&!(Array.isArray(v)&&!v.length))n++;}
- if(d?.rawText)n+=2; if(d?.paymentItems)n+=2; if(d?.deductionItems)n+=2; return n;
-}
+function docRichness(d){let n=0;for(const [k,v] of Object.entries(d||{})){if(v!=null&&v!==''&&!(Array.isArray(v)&&!v.length))n++;}if(d?.rawText)n+=2;if(d?.paymentItems)n+=2;if(d?.deductionItems)n+=2;return n}
 function sameDoc(a,b){return docIdentity(a)===docIdentity(b)}
-async function dedupeStoredDocuments(){
- const docs=await allDocs(), groups=new Map();
- for(const d of docs){const key=docIdentity(d);const arr=groups.get(key)||[];arr.push(d);groups.set(key,arr)}
- let removed=0,changed=0;
- for(const arr of groups.values()){if(arr.length<2)continue;arr.sort((a,b)=>docRichness(b)-docRichness(a));const keep=arr[0];
-   if(keep.id!==makeId(keep)){const next={...keep,id:makeId(keep)};await putDoc(next);await tx(DOCS,'readwrite',s=>s.delete(keep.id));keep=next;changed++}
-   for(const d of arr.slice(1)){if(d.id!==keep.id){await tx(DOCS,'readwrite',s=>s.delete(d.id));removed++}}
- }
- return {removed,changed};
-}
+async function dedupeStoredDocuments(){const docs=await allDocs(),groups=new Map();for(const d of docs){const key=docIdentity(d),arr=groups.get(key)||[];arr.push(d);groups.set(key,arr)}let removed=0,changed=0;for(const arr of groups.values()){if(arr.length<2){const d=arr[0];if(d&&d.id!==makeId(d)){const next={...d,id:makeId(d)};await putDoc(next);await tx(DOCS,'readwrite',s=>s.delete(d.id));changed++;}continue;}arr.sort((a,b)=>docRichness(b)-docRichness(a));let keep=arr[0];if(keep.id!==makeId(keep)){const next={...keep,id:makeId(keep)};await putDoc(next);await tx(DOCS,'readwrite',s=>s.delete(keep.id));keep=next;changed++;}for(const d of arr.slice(1)){if(d.id!==keep.id){await tx(DOCS,'readwrite',s=>s.delete(d.id));removed++;}}}return {removed,changed};}
 function mapNested(d){
  const p=d.paymentItems||{}, q=d.deductionItems||{}, a=d.additionalPaymentItems||{}, w=d.workingRecord||{}, b=d.baseSalaryBreakdown||{}, sm=d.standardMonthlyRemuneration||{}, sb=d.standardBonusAmounts||{};
  const get=(obj,...keys)=>{for(const k of keys)if(obj[k]!=null)return obj[k];return null};
@@ -114,10 +97,11 @@ function enrichWithholdingFromEnvelope(raw,parsed){
  }
  return out;
 }
+async function parseImportJson(text){let t=String(text??'').trim();t=t.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();if(!t)throw new Error('JSONが空です');try{return JSON.parse(t)}catch(e){const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1))}catch(_){}}throw new Error('JSONの形式が正しくありません。説明文やコードブロックを含めず、{"version":1,"documents":[...]} のJSONだけを貼り付けてください。')}}
 async function importJsonText(text,sourceName='ChatGPT JSON'){
- const parsed=JSON.parse(text); const list=Array.isArray(parsed)?parsed:(Array.isArray(parsed.documents)?parsed.documents:[]); if(!list.length)throw new Error('documents配列がありません');
- let added=0,updated=0; for(const raw0 of list){const raw=enrichWithholdingFromEnvelope(raw0,parsed);const d=normalizeDoc(raw,sourceName);const old=state.documents.find(x=>sameDoc(x,d)||x.id===d.id);if(old&&old.id!==d.id)await tx(DOCS,'readwrite',s=>s.delete(old.id));await putDoc(d);old?updated++:added++}
- const log=addLog('データ反映',{source:sourceName,count:list.length,added,updated});await putLog(log);state.documents=await allDocs();state.logs=await allLogs();render();showMessage(`反映完了：${added}件追加、${updated}件更新。DB保存済み`,'ok');
+ const parsed=await parseImportJson(text); const list=Array.isArray(parsed)?parsed:(Array.isArray(parsed.documents)?parsed.documents:[]); if(!list.length)throw new Error('documents配列がありません');
+ let added=0,updated=0; for(const raw0 of list){const raw=enrichWithholdingFromEnvelope(raw0,parsed);const d=normalizeDoc(raw,sourceName);const old=state.documents.find(x=>sameDoc(x,d)||x.id===d.id);if(old&&old.id!==d.id)await tx(DOCS,'readwrite',st=>st.delete(old.id));await putDoc(d);old?updated++:added++;}
+ const deduped=await dedupeStoredDocuments();const log=addLog('データ反映',{source:sourceName,count:list.length,added,updated,duplicatesRemoved:deduped.removed});await putLog(log);state.documents=await allDocs();state.logs=await allLogs();render();showMessage(`反映完了：${added}件追加、${updated}件更新。重複${deduped.removed}件整理。`,'ok');
 }
 function lifeDeduction(premium,type,year,under23=false){const x=num(premium);if(!x)return 0;if(type==='newLife'&&year>=2026&&under23)return x<=30000?x:x<=60000?x/2+15000:x<=120000?x/4+30000:60000;if(type==='new'||type==='newLife')return x<=20000?x:x<=40000?x/2+10000:x<=80000?x/4+20000:40000;if(type==='old')return x<=25000?x:x<=50000?x/2+12500:x<=100000?x/4+25000:50000;return 0}
 function calcLife(m,year){const under23=Boolean(m.under23Dependent&&year>=2026);const nl=num(m.newLife),ol=num(m.oldLife),np=num(m.newPension),op=num(m.oldPension),med=num(m.medical);const oldCalc=lifeDeduction(ol,'old',year);const newCalc=lifeDeduction(nl,'newLife',year,under23);const general=ol>60000?(under23&&year>=2026?Math.min(60000,oldCalc):Math.min(50000,oldCalc)):Math.min(under23&&year>=2026?60000:40000,newCalc+oldCalc);const pension=op>60000?lifeDeduction(op,'old',year):Math.min(40000,lifeDeduction(np,'new',year)+lifeDeduction(op,'old',year));const medical=Math.min(40000,lifeDeduction(med,'new',year));const total=Math.min(120000,general+pension+medical);return{general,pension,medical,total,raw:{newLife:nl,oldLife:ol,medical:med,newPension:np,oldPension:op}}}
@@ -340,7 +324,7 @@ Libraryの最新資料と既存のアプリ用データを照合し、重複・�
 $('saveManual').onclick=saveManual;$('manualYear').onchange=()=>{activeYear=num($('manualYear').value)||2026;localStorage.setItem('furusatoActiveYear',String(activeYear));renderManual();render()};document.querySelectorAll('#manualForm input').forEach(e=>e.addEventListener('input',updateManualCalc));document.querySelectorAll('#manualForm input[type=checkbox]').forEach(e=>e.addEventListener('change',async()=>{if(e.id.startsWith('basis')){const y=num($('manualYear')?.value)||activeYear||2026;const m=readManualForm();state.manual[String(y)]=m;await putMeta('manual',state.manual);localStorage.setItem('furusatoManualBackup',JSON.stringify(state.manual));activeYear=y;localStorage.setItem('furusatoActiveYear',String(y));state.logs=await allLogs();render();}else updateManualCalc();}));document.addEventListener('click',e=>{const tab=e.target.closest('.year-tab');if(tab){activeYear=num(tab.dataset.year)||2026;localStorage.setItem('furusatoActiveYear',String(activeYear));if($('manualYear'))$('manualYear').value=String(activeYear);renderManual();render()}const logtab=e.target.closest('.logtab');if(logtab){document.querySelectorAll('.logtab').forEach(b=>b.classList.toggle('active',b===logtab));document.querySelectorAll('[id^="logtab-"]').forEach(p=>p.hidden=p.id!==`logtab-${logtab.dataset.logtab}`)}});
 $('exportDb').onclick=()=>download('furusato_db.json',JSON.stringify({version:1,documents:state.documents},null,2));
 $('exportBackup').onclick=()=>download('furusato_restore.json',JSON.stringify({version:1,documents:state.documents,manual:state.manual},null,2));
-$('restoreFile').onchange=async()=>{const f=$('restoreFile').files?.[0];if(!f)return;try{const parsed=JSON.parse(await f.text());const list=Array.isArray(parsed.documents)?parsed.documents:[];let added=0,updated=0;for(const raw of list){const d=normalizeDoc(raw,'restore');const old=state.documents.find(x=>sameDoc(x,d)||x.id===d.id);if(old&&old.id!==d.id)await tx(DOCS,'readwrite',s=>s.delete(old.id));await putDoc(d);old?updated++:added++;}if(parsed.manual&&typeof parsed.manual==='object'){state.manual={...state.manual,...parsed.manual};await putMeta('manual',state.manual);localStorage.setItem('furusatoManualBackup',JSON.stringify(state.manual));}state.documents=await allDocs();state.logs=await allLogs();render();showMessage(`復元完了：資料${added}件追加・${updated}件更新、手動入力${Object.keys(parsed.manual||{}).length}年度を復元しました。`,'ok');$('restoreFile').value='';}catch(e){showMessage('復元できません：'+e.message,'error')}};
+$('restoreFile').onchange=async()=>{const f=$('restoreFile').files?.[0];if(!f)return;try{const parsed=JSON.parse(await f.text());const list=Array.isArray(parsed.documents)?parsed.documents:[];let added=0,updated=0;for(const raw of list){const d=normalizeDoc(raw,'restore');const old=state.documents.find(x=>x.id===d.id);await putDoc(d);old?updated++:added++;}if(parsed.manual&&typeof parsed.manual==='object'){state.manual={...state.manual,...parsed.manual};await putMeta('manual',state.manual);localStorage.setItem('furusatoManualBackup',JSON.stringify(state.manual));}state.documents=await allDocs();state.logs=await allLogs();try{const cleaned=await dedupeStoredDocuments();if(cleaned.removed||cleaned.changed){const log=addLog('既存データ重複整理',cleaned);await putLog(log);state.documents=await allDocs();state.logs=await allLogs();}}catch(e){console.error('dedupe migration',e)}render();showMessage(`復元完了：資料${added}件追加・${updated}件更新、手動入力${Object.keys(parsed.manual||{}).length}年度を復元しました。`,'ok');$('restoreFile').value='';}catch(e){showMessage('復元できません：'+e.message,'error')}};
 $('exportLog').onclick=()=>download('furusato_debug.txt',state.logs.map(x=>JSON.stringify(x)).join('\n'));$('clearDb').onclick=async()=>{if(confirm('保存データと手動入力を消去しますか？')){const db=await openDB();await new Promise((res,rej)=>{const t=db.transaction([DOCS,LOGS,META],'readwrite');t.objectStore(DOCS).clear();t.objectStore(LOGS).clear();t.objectStore(META).clear();t.oncomplete=res;t.onerror=()=>rej(t.error)});state={documents:[],logs:[],manual:{}};localStorage.removeItem('furusatoManualBackup');render();showMessage('消去しました','ok')}};
 function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 state.documents=await allDocs();state.logs=await allLogs();
@@ -350,10 +334,19 @@ state.manual={...backupManual,...dbManual};
 activeYear=num(localStorage.getItem('furusatoActiveYear'))||Object.keys(state.manual).map(Number).filter(Boolean).sort((a,b)=>b-a)[0]||2026;
 if(Object.keys(state.manual).length)await putMeta('manual',state.manual);
 if(Object.keys(state.manual).length)localStorage.setItem('furusatoManualBackup',JSON.stringify(state.manual));
-// 既存DBを正規IDへ移行し、同じ資料の旧ID・再インポート重複を一度だけ整理する。
-const beforeDocs=await allDocs();
-for(const old of beforeDocs){const n=normalizeDoc(old,old.source||'migrated');if(n.id!==old.id){await putDoc(n);await tx(DOCS,'readwrite',s=>s.delete(old.id));}}
-const deduped=await dedupeStoredDocuments();
+// Migrate old imported records. Classification is driven by the actual document name: Chinginmeisai=給与, Bonus=賞与, Gensen/Genseb=源泉徴収票.
+const migrated=new Map();
+for(const old of state.documents){
+ const n=normalizeDoc(old,old.source||'migrated');
+ const key=n.id;
+ const prev=migrated.get(key);
+ if(!prev || (prev.kind==='unknown' && n.kind!=='unknown')) migrated.set(key,n);
+}
+const oldIds=new Set(state.documents.map(d=>d.id));
+for(const old of state.documents){if(!migrated.has(old.id)) await tx(DOCS,'readwrite',s=>s.delete(old.id));}
+for(const n of migrated.values()) await putDoc(n);
 state.documents=await allDocs();
-if(deduped.removed||deduped.changed){const log=addLog('既存データ重複整理',deduped);await putLog(log);state.logs=await allLogs();}
-render();
+// Remove legacy duplicate IDs after canonical reclassification.
+const canonicalIds=new Set([...migrated.values()].map(d=>d.id));
+for(const old of state.documents){if(old.id && !canonicalIds.has(old.id) && old.source==='migrated') await tx(DOCS,'readwrite',s=>s.delete(old.id));}
+state.documents=await allDocs();render();
