@@ -328,6 +328,16 @@ $('restoreFile').onchange=async()=>{const f=$('restoreFile').files?.[0];if(!f)re
 $('exportLog').onclick=()=>download('furusato_debug.txt',state.logs.map(x=>JSON.stringify(x)).join('\n'));$('clearDb').onclick=async()=>{if(confirm('保存データと手動入力を消去しますか？')){const db=await openDB();await new Promise((res,rej)=>{const t=db.transaction([DOCS,LOGS,META],'readwrite');t.objectStore(DOCS).clear();t.objectStore(LOGS).clear();t.objectStore(META).clear();t.oncomplete=res;t.onerror=()=>rej(t.error)});state={documents:[],logs:[],manual:{}};localStorage.removeItem('furusatoManualBackup');render();showMessage('消去しました','ok')}};
 function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 state.documents=await allDocs();state.logs=await allLogs();
+// 起動時に既存DBの重複を整理する。GitHub Pagesの再読み込みだけで完了するようにする。
+try{
+ const cleaned=await dedupeStoredDocuments();
+ if(cleaned.removed||cleaned.changed){
+  const log=addLog('既存データ重複整理',cleaned);
+  await putLog(log);
+  state.documents=await allDocs();
+  state.logs=await allLogs();
+ }
+}catch(e){console.error('dedupe migration',e)}
 const dbManual=await getMeta('manual')||{};
 let backupManual={};try{backupManual=JSON.parse(localStorage.getItem('furusatoManualBackup')||'{}')||{};}catch{}
 state.manual={...backupManual,...dbManual};
