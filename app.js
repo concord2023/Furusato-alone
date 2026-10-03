@@ -131,10 +131,12 @@ function sourceDependentBreakdown(w,year){
  const parsed=parseDependentCountsFromEvidence(evidence);
  // まず源泉徴収票の「その他」の人数を最優先で採用する。
  // これが今回の帳票で必要な「その他=1人 → 380,000円」の読み取り。
- if(generalCount==null && parsed.general!=null) generalCount=parsed.general;
- if(specificCount==null && parsed.specific!=null) specificCount=parsed.specific;
- if(elderlyCount==null && parsed.elderly!=null) elderlyCount=parsed.elderly;
- if(cohabitingElderlyCount==null && parsed.cohabitingElderly!=null) cohabitingElderlyCount=parsed.cohabitingElderly;
+ // 源泉票のOCRから読めた人数を最優先する。既存JSONに0が残っていても、
+ // 帳票上の「その他=1」などを0で上書きしない。
+ if(parsed.general!=null && (generalCount==null || generalCount===0)) generalCount=parsed.general;
+ if(parsed.specific!=null && (specificCount==null || specificCount===0)) specificCount=parsed.specific;
+ if(parsed.elderly!=null && (elderlyCount==null || elderlyCount===0)) elderlyCount=parsed.elderly;
+ if(parsed.cohabitingElderly!=null && (cohabitingElderlyCount==null || cohabitingElderlyCount===0)) cohabitingElderlyCount=parsed.cohabitingElderly;
  // 2024年以前の源泉票に明示人数がない場合は、保存済みの扶養親族情報を利用する。
  if(year<=2024 && generalCount==null && specificCount==null){
    const children=Array.isArray(w.dependentChildren)?w.dependentChildren:[];
