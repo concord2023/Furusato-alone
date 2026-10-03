@@ -166,7 +166,9 @@ function sourceAdjustmentFromWithholding(w,year,m,payment){
 function basisOn(m,key,side){return Boolean(m.basis?.[key]?.[side])}
 function calcBasisSide(w,year,m,side,includeComparison=false){
  const salaryRef=forecastSalaryBonus(state.documents||[],year);
- const salaryBasePayment=salaryRef?salaryRef.yearSalary+salaryRef.bonusTotal:0;
+ // 給与・賞与ベースの年間支給額は、予測計算で確定した totalIncome から手動加算分だけ除いて取得する。
+ // yearSalary と bonusTotal を別経路で再加算しないため、給与・賞与の二重加算を防止する。
+ const salaryBasePayment=salaryRef?Math.max(0,num(salaryRef.totalIncome)-num(salaryRef.comparison?.paymentManualAddition)):0;
  const sourceBasePayment=pickNum(w,['paymentAmount','annualSalary','totalPayment','支払金額','支払金額合計','支払金額の合計'])??0;
  const sourceIncomeOriginal=pickNum(w,['salaryIncomeAfterDeduction','給与所得控除後の金額（調整控除後）','給与所得控除後の金額','給与所得'])??Math.max(0,sourceBasePayment-salaryDeduction(sourceBasePayment,year));
  const sourceIncomeIsAdjusted=pickNum(w,['salaryIncomeAfterDeduction','給与所得控除後の金額（調整控除後）'])!=null;
