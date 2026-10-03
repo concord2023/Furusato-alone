@@ -78,9 +78,25 @@ function normalizeDoc(raw,sourceName){
  return d;
 }
 function deriveSocial(d){return ['employment','health','healthSpecial','care','childSupport','pension'].map(k=>num(d[k])).reduce((a,b)=>a+b,0)}
+function enrichWithholdingFromEnvelope(raw,parsed){
+ if(inferKind(raw)!=='withholding') return raw;
+ const candidates=[];
+ for(const k of ['currentWithholding','priorWithholding']) if(parsed?.[k]&&typeof parsed[k]==='object') candidates.push(parsed[k]);
+ if(Array.isArray(parsed?.withholdingRecords)) candidates.push(...parsed.withholdingRecords);
+ if(parsed?.yearRecords&&typeof parsed.yearRecords==='object'){for(const v of Object.values(parsed.yearRecords)){if(v?.withholding&&typeof v.withholding==='object')candidates.push(v.withholding);}}
+ const keyOf=x=>String(x?.driveFileId||x?.document||x?.file||x?.name||'');
+ const rawKey=keyOf(raw);
+ const match=candidates.find(x=>{const k=keyOf(x);return (raw.driveFileId&&x.driveFileId&&raw.driveFileId===x.driveFileId)||(rawKey&&k&&rawKey===k)||(Number(raw.year||0)>0&&Number(x.year||0)===Number(raw.year||0)&&(!raw.document||!x.document||String(raw.document)===String(x.document)))});
+ const out=match?{...match,...raw}: {...raw};
+ // Top-level dependents are source evidence too; do not lose them when documents[] is compact.
+ if((!Array.isArray(out.dependentChildren)||!out.dependentChildren.length)&&Array.isArray(parsed?.dependents)&&parsed.dependents.length){
+   out.dependentChildren=parsed.dependents.map(x=>({age:x.age,income:x.income,relationship:x.relationship,livingTogether:x.livingTogether,source:x.source}));
+ }
+ return out;
+}
 async function importJsonText(text,sourceName='ChatGPT JSON'){
  const parsed=JSON.parse(text); const list=Array.isArray(parsed)?parsed:(Array.isArray(parsed.documents)?parsed.documents:[]); if(!list.length)throw new Error('documents配列がありません');
- let added=0,updated=0; for(const raw of list){const d=normalizeDoc(raw,sourceName);const old=state.documents.find(x=>x.id===d.id);await putDoc(d);old?updated++:added++}
+ let added=0,updated=0; for(const raw0 of list){const raw=enrichWithholdingFromEnvelope(raw0,parsed);const d=normalizeDoc(raw,sourceName);const old=state.documents.find(x=>x.id===d.id);await putDoc(d);old?updated++:added++}
  const log=addLog('データ反映',{source:sourceName,count:list.length,added,updated});await putLog(log);state.documents=await allDocs();state.logs=await allLogs();render();showMessage(`反映完了：${added}件追加、${updated}件更新。DB保存済み`,'ok');
 }
 function lifeDeduction(premium,type,year,under23=false){const x=num(premium);if(!x)return 0;if(type==='newLife'&&year>=2026&&under23)return x<=30000?x:x<=60000?x/2+15000:x<=120000?x/4+30000:60000;if(type==='new'||type==='newLife')return x<=20000?x:x<=40000?x/2+10000:x<=80000?x/4+20000:40000;if(type==='old')return x<=25000?x:x<=50000?x/2+12500:x<=100000?x/4+25000:50000;return 0}
@@ -321,6 +337,19 @@ for(const old of state.documents){
 const oldIds=new Set(state.documents.map(d=>d.id));
 for(const old of state.documents){if(!migrated.has(old.id)) await tx(DOCS,'readwrite',s=>s.delete(old.id));}
 for(const n of migrated.values()) await putDoc(n);
+state.documents=await allDocs();
+// Existing DB records imported from compact documents[] may lack the envelope's
+// withholding evidence. For the actual 2025 source form, the stored PDF/OCR
+// evidence is already represented by the explicit 18-year-old dependent record
+// when available; preserve it as a general dependent instead of displaying 0.
+for(const old of state.documents){
+ if(old.kind!=='withholding' || Number(old.year)!==2025) continue;
+ const hasGeneral=pickNum(old,['dependentGeneralCount','generalDependentCount','一般扶養親族数','その他扶養親族数']);
+ if((hasGeneral==null||hasGeneral===0) && Array.isArray(old.dependentChildren) && old.dependentChildren.length){
+   const general=old.dependentChildren.filter(x=>Number(x.age)>=16&&Number(x.age)<=18 || Number(x.age)>=23).length;
+   if(general>0){old.dependentGeneralCount=general;await putDoc(old);}
+ }
+}
 state.documents=await allDocs();
 // Remove legacy duplicate IDs after canonical reclassification.
 const canonicalIds=new Set([...migrated.values()].map(d=>d.id));
