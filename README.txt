@@ -14,3 +14,10 @@
 個人データはこのZIPには含めていません。
 
 - v5: 手動チェック変更を即時保存・比較表へ反映。源泉徴収票の「給与所得控除後（調整控除後）」を二重に所得金額調整控除しない。給与・賞与ベースの手動加算は「給与・賞与のみ＋手動加算＝総支払額」と明示。2026年基礎控除の489万円超655万円以下を67万円に修正。
+
+v6 changes (2026-10-03):
+- Comparison table separates ordinary/family dependent deduction from special dependent special deduction.
+- Source withholding special-dependent deduction is read from specialDependent and included in tax/resident-tax calculations.
+- Manual dependent inputs are split into ordinary dependent deduction and special dependent special deduction; both are included in calculations when enabled.
+- Social insurance comparison now shows automatic base + manual self pension + manual daughter pension = final total, making missing manual additions visible.
+- Daughter National Pension is added independently to both source/salary calculations when both targets are checked.
