@@ -1,3 +1,4 @@
+window.__FURUSATO_BUILD='20261004-v42';
 const DB='furusatoStandaloneDB', DOCS='documents', LOGS='logs', META='meta';
 const $=id=>document.getElementById(id);
 let state={documents:[],logs:[],manual:{}};
@@ -29,6 +30,9 @@ function docIdentity(d){
  const y=Number(d?.year||0)||0;
  const k=inferKind(d)||'unknown';
  const m=d?.month==null?'annual':Number(d.month);
+ // 給与・賞与は「年度＋種類＋対象月」が資料そのものの単位。
+ // JSON側の表示名が変わっても同じ月の同じ明細を二重登録しない。
+ if((k==='salary'||k==='bonus')&&y>0&&m!=='annual') return `${y}|${k}|${m}`;
  const named=[d?.document,d?.name,d?.fileName,d?.filename].find(v=>String(v??'').trim());
  if(named) return `${y}|${k}|${m}|${normalizeDocKey(named)}`;
  const drive=String(d?.driveFileId||'').trim();
@@ -362,8 +366,8 @@ function renderLogs(){
  $('logList').innerHTML=logs.length?logs.map(x=>`<details class="log-entry"><summary>${esc(x.msg||'ログ')}　<span class="small">${esc(x.time||'')}</span>${x.year?`　<span class="small">${esc(x.year)}年</span>`:''}</summary><pre>${escapeHtml(JSON.stringify(x,null,2))}</pre></details>`).join(''):'<p class="small">まだ操作ログがありません。</p>';
 }
 function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
-$('reflectJson').onclick=async()=>{try{await importJsonText($('jsonInput').value);$('jsonInput').value=''}catch(e){showMessage('反映できません：'+e.message,'error')}};
-$('copyPrompt').onclick=async()=>{const prompt=`【ふるさと納税アプリからの更新依頼】
+if($('reflectJson'))$('reflectJson').onclick=async()=>{try{await importJsonText($('jsonInput').value);$('jsonInput').value=''}catch(e){showMessage('反映できません：'+e.message,'error')}};
+if($('copyPrompt'))$('copyPrompt').onclick=async()=>{const prompt=`【ふるさと納税アプリからの更新依頼】
 
 この文章を受け取った場合、これは「ふるさと納税アプリ」の正式なデータ更新依頼として扱ってください。
 Libraryの最新資料と既存のアプリ用データを照合し、重複・差分を確認したうえで、アプリへ取り込むJSONを作成してください。
@@ -384,18 +388,17 @@ Libraryの最新資料と既存のアプリ用データを照合し、重複・�
 説明文は付けず、アプリがそのまま取り込めるJSONだけを返してください。
 形式は必ず次のとおりです。
 {"version":1,"documents":[...]}`;await navigator.clipboard.writeText(prompt);showMessage('ChatGPTへの更新依頼文をコピーしました。','ok')};
-$('saveManual').onclick=saveManual;$('manualYear').onchange=()=>{activeYear=num($('manualYear').value)||2026;localStorage.setItem('furusatoActiveYear',String(activeYear));renderManual();render()};document.querySelectorAll('#manualForm input').forEach(e=>e.addEventListener('input',updateManualCalc));document.querySelectorAll('#manualForm input[type=checkbox]').forEach(e=>e.addEventListener('change',async()=>{if(e.id.startsWith('basis')){const y=num($('manualYear')?.value)||activeYear||2026;const m=readManualForm();state.manual[String(y)]=m;await putMeta('manual',state.manual);localStorage.setItem('furusatoManualBackup',JSON.stringify(state.manual));activeYear=y;localStorage.setItem('furusatoActiveYear',String(y));state.logs=await allLogs();render();}else updateManualCalc();}));document.addEventListener('click',e=>{const tab=e.target.closest('.year-tab');if(tab){activeYear=num(tab.dataset.year)||2026;localStorage.setItem('furusatoActiveYear',String(activeYear));if($('manualYear'))$('manualYear').value=String(activeYear);renderManual();render()}const logtab=e.target.closest('.logtab');if(logtab){document.querySelectorAll('.logtab').forEach(b=>b.classList.toggle('active',b===logtab));document.querySelectorAll('[id^="logtab-"]').forEach(p=>p.hidden=p.id!==`logtab-${logtab.dataset.logtab}`)}});
-$('exportDb').onclick=()=>download('furusato_db.json',JSON.stringify({version:1,documents:state.documents},null,2));
-$('exportBackup').onclick=()=>download('furusato_restore.json',JSON.stringify({version:1,documents:state.documents,manual:state.manual},null,2));
-$('restoreFile').onchange=async()=>{const f=$('restoreFile').files?.[0];if(!f)return;try{
+if($('saveManual'))$('saveManual').onclick=saveManual;if($('manualYear'))$('manualYear').onchange=()=>{activeYear=num($('manualYear').value)||2026;localStorage.setItem('furusatoActiveYear',String(activeYear));renderManual();render()};document.querySelectorAll('#manualForm input').forEach(e=>e.addEventListener('input',updateManualCalc));document.querySelectorAll('#manualForm input[type=checkbox]').forEach(e=>e.addEventListener('change',async()=>{if(e.id.startsWith('basis')){const y=num($('manualYear')?.value)||activeYear||2026;const m=readManualForm();state.manual[String(y)]=m;await putMeta('manual',state.manual);localStorage.setItem('furusatoManualBackup',JSON.stringify(state.manual));activeYear=y;localStorage.setItem('furusatoActiveYear',String(y));state.logs=await allLogs();render();}else updateManualCalc();}));document.addEventListener('click',e=>{const tab=e.target.closest('.year-tab');if(tab){activeYear=num(tab.dataset.year)||2026;localStorage.setItem('furusatoActiveYear',String(activeYear));if($('manualYear'))$('manualYear').value=String(activeYear);renderManual();render()}const logtab=e.target.closest('.logtab');if(logtab){document.querySelectorAll('.logtab').forEach(b=>b.classList.toggle('active',b===logtab));document.querySelectorAll('[id^="logtab-"]').forEach(p=>p.hidden=p.id!==`logtab-${logtab.dataset.logtab}`)}});
+if($('exportDb'))$('exportDb').onclick=()=>download('furusato_db.json',JSON.stringify({version:1,documents:state.documents},null,2));
+if($('exportBackup'))$('exportBackup').onclick=()=>download('furusato_restore.json',JSON.stringify({version:1,documents:state.documents,manual:state.manual},null,2));
+if($('restoreFile'))$('restoreFile').onchange=async()=>{const f=$('restoreFile').files?.[0];if(!f)return;try{
  const parsed=await parseImportJson(await f.text());const list=Array.isArray(parsed.documents)?parsed.documents:[];let added=0,updated=0;
  const before=await allDocs();
  for(const raw of list){const d=normalizeDoc(raw,'restore');const old=before.find(x=>sameDoc(x,d)||x.id===d.id);if(old&&old.id!==d.id)await tx(DOCS,'readwrite',st=>st.delete(old.id));await putDoc(d);old?updated++:added++;}
  if(parsed.manual&&typeof parsed.manual==='object'){state.manual={...state.manual,...parsed.manual};await putMeta('manual',state.manual);localStorage.setItem('furusatoManualBackup',JSON.stringify(state.manual));}
  const cleaned=await dedupeStoredDocuments();state.documents=await allDocs();state.logs=await allLogs();render();showMessage(`復元完了：資料${added}件追加・${updated}件更新、重複${cleaned.removed}件整理、手動入力${Object.keys(parsed.manual||{}).length}年度を復元しました。`,'ok');$('restoreFile').value='';
  }catch(e){showMessage('復元できません：'+e.message,'error')}};
-$('exportLog').onclick=()=>download('furusato_debug.txt',state.logs.map(x=>JSON.stringify(x)).join('\n'));const clearDb=$('clearDb');if(clearDb)clearDb.onclick=async()=>{if(confirm('保存データと手動入力を消去しますか？')){const db=await openDB();await new Promise((res,rej)=>{const t=db.transaction([DOCS,LOGS,META],'readwrite');t.objectStore(DOCS).clear();t.objectStore(LOGS).clear();t.objectStore(META).clear();t.oncomplete=res;t.onerror=()=>rej(t.error)});state={documents:[],logs:[],manual:{}};localStorage.removeItem('furusatoManualBackup');render();showMessage('消去しました','ok')}};
-function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+if($('exportLog'))$('exportLog').onclick=()=>download('furusato_debug.txt',state.logs.map(x=>JSON.stringify(x)).join('\n'));function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 state.documents=await allDocs();state.logs=await allLogs();
 const dbManual=await getMeta('manual')||{};
 let backupManual={};try{backupManual=JSON.parse(localStorage.getItem('furusatoManualBackup')||'{}')||{};}catch{}
