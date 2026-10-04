@@ -1,4 +1,4 @@
-window.__FURUSATO_BUILD='20261004-v42';
+window.__FURUSATO_BUILD='20261004-v43';
 const DB='furusatoStandaloneDB', DOCS='documents', LOGS='logs', META='meta';
 const $=id=>document.getElementById(id);
 let state={documents:[],logs:[],manual:{}};
@@ -398,7 +398,26 @@ if($('restoreFile'))$('restoreFile').onchange=async()=>{const f=$('restoreFile')
  if(parsed.manual&&typeof parsed.manual==='object'){state.manual={...state.manual,...parsed.manual};await putMeta('manual',state.manual);localStorage.setItem('furusatoManualBackup',JSON.stringify(state.manual));}
  const cleaned=await dedupeStoredDocuments();state.documents=await allDocs();state.logs=await allLogs();render();showMessage(`復元完了：資料${added}件追加・${updated}件更新、重複${cleaned.removed}件整理、手動入力${Object.keys(parsed.manual||{}).length}年度を復元しました。`,'ok');$('restoreFile').value='';
  }catch(e){showMessage('復元できません：'+e.message,'error')}};
-if($('exportLog'))$('exportLog').onclick=()=>download('furusato_debug.txt',state.logs.map(x=>JSON.stringify(x)).join('\n'));function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+if($('exportLog'))$('exportLog').onclick=()=>download('furusato_debug.txt',state.logs.map(x=>JSON.stringify(x)).join('\n'));
+async function clearReadResults(){
+ if(!confirm('読み取り結果だけを消去します。\n\n給与・賞与・源泉徴収票などの読み取りデータは消去されます。\n手動入力・手動調整・手動入力の保存値は消去しません。\n\n実行しますか？'))return;
+ const db=await openDB();
+ await new Promise((res,rej)=>{
+  const t=db.transaction([DOCS],'readwrite');
+  t.objectStore(DOCS).clear();
+  t.oncomplete=res;
+  t.onerror=()=>rej(t.error);
+  t.onabort=()=>rej(t.error||new Error('読み取り結果の消去に失敗しました'));
+ });
+ state.documents=[];
+ state.importHistory=[];
+ try{localStorage.removeItem('furusatoImportHistory')}catch{}
+ render();
+ if(typeof renderManual==='function')renderManual();
+ showMessage('読み取り結果だけを消去しました。手動入力は保持されています。','ok');
+}
+if($('clearReadResults'))$('clearReadResults').onclick=()=>clearReadResults().catch(e=>showMessage('読み取り結果を消去できません：'+e.message,'error'));
+function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'application/json;charset=utf-8'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 state.documents=await allDocs();state.logs=await allLogs();
 const dbManual=await getMeta('manual')||{};
 let backupManual={};try{backupManual=JSON.parse(localStorage.getItem('furusatoManualBackup')||'{}')||{};}catch{}

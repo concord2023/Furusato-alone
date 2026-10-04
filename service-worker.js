@@ -1,4 +1,4 @@
-const CACHE='furusato-manager-20261004-v41';
+const CACHE='furusato-manager-20261004-v43';
 const STATIC_ASSETS=['./style.css','./calculator.js','./data-model.js','./integration.js','./manifest.json'];
 const NETWORK_FIRST=['./','./index.html','./details.html','./donations.html','./settings.html','./app.js','./service-worker.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC_ASSETS)).then(()=>self.skipWaiting())));
