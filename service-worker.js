@@ -1,6 +1,6 @@
-const CACHE='furusato-manager-20261004-v45';
+const CACHE='furusato-manager-20261004-v43';
 const STATIC_ASSETS=['./style.css','./calculator.js','./data-model.js','./integration.js','./manifest.json'];
-const NETWORK_FIRST=['./','./index.html','./details.html','./donations.html','./settings.html','./request.html','./database.html','./app.js','./service-worker.js'];
+const NETWORK_FIRST=['./','./index.html','./details.html','./donations.html','./settings.html','./app.js','./service-worker.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll(STATIC_ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{
