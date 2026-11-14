@@ -1,0 +1,1 @@
+{"background_color":"#ffffff","description":"ふるさと納税の寄附上限額を管理するアプリ。個人データは端末内に保存します。","display":"standalone","icons":[{"purpose":"any","sizes":"any","src":"./icon.svg","type":"image/svg+xml"}],"lang":"ja","name":"ふるさと納税 上限管理","scope":"./","short_name":"ふるさと納税","start_url":"./index.html","theme_color":"#315ea8"}

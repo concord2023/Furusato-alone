@@ -1,4 +1,4 @@
-window.__FURUSATO_BUILD='20261004-v43';
+window.__FURUSATO_BUILD='20261115-v44';
 const DB='furusatoStandaloneDB', DOCS='documents', LOGS='logs', META='meta';
 const $=id=>document.getElementById(id);
 let state={documents:[],logs:[],manual:{}};

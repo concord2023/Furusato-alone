@@ -4,7 +4,7 @@
 </style></head><body>
 <header><div><a href="index.html" class="back">← ホーム</a><strong>ChatGPT依頼</strong></div></header>
 <main>
-<nav class="menu"><a href="index.html">ホーム</a><a href="details.html">上限詳細</a><a href="donations.html">寄附・配送</a><a class="active" href="request.html">依頼</a><a href="database.html">読み取りDB</a><a href="settings.html">設定</a></nav>
+<nav class="menu"><a href="index.html">ホーム</a><a href="index.html">上限詳細</a><a href="consumption.html">消費管理</a><a class="active" href="request.html">依頼</a><a href="database.html">読み取りDB</a><a href="settings.html">設定</a></nav>
 <section class="card"><h2>🤖 共通の更新依頼</h2><p class="hint">ここは年度別の画面から切り離した、ChatGPTへの共通依頼専用ページです。年度を選ぶ必要はありません。</p><div class="actions"><button id="copyPrompt">依頼文をコピー</button></div><div id="copyStatus" class="status" aria-live="polite"></div></section>
 <section class="card"><h2>📥 ChatGPTから受け取ったJSONを反映</h2><div class="step"><b>1</b><div>上の依頼文をコピーしてChatGPTへ送ります。</div></div><div class="step"><b>2</b><div>ChatGPTが返した <code>{"version":1,"documents":[...]}</code> を下へ貼り付けます。</div></div><div class="step"><b>3</b><div>「読み取りDBへ反映」を押すと、同じ資料は重複登録せず、内容の充実したデータを残します。</div></div><textarea id="jsonInput" class="wide" placeholder='{"version":1,"documents":[...]}'></textarea><div class="actions" style="margin-top:10px"><button id="reflectJson">読み取りDBへ反映</button><button id="clearInput" class="secondary">入力を消す</button></div><div id="importStatus" class="status" aria-live="polite"></div></section>
 <section class="card"><h2>🔒 データの扱い</h2><p class="hint">このページでは氏名を表示・入力しません。JSONは読み取り結果DBへ保存し、手動入力とは別管理します。</p></section>
@@ -32,4 +32,4 @@ const prompt=`【ふるさと納税アプリからの更新依頼】\n\nこの�
 $('copyPrompt').onclick=async()=>{try{await navigator.clipboard.writeText(prompt);$('copyStatus').textContent='依頼文をコピーしました。';$('copyStatus').className='status ok'}catch(e){$('copyStatus').textContent='コピーできませんでした。下の依頼文を長押しでコピーしてください。';$('copyStatus').className='status error';const p=document.createElement('textarea');p.value=prompt;p.className='wide';$('copyStatus').after(p)}};
 $('reflectJson').onclick=async()=>{const s=$('importStatus');try{const r=await importDocs($('jsonInput').value);s.textContent=`反映完了：追加${r.added}件／更新${r.updated}件／重複整理${r.removed}件。読み取りDBで確認できます。`;s.className='status ok';$('jsonInput').value=''}catch(e){s.textContent='反映できません：'+e.message;s.className='status error'}};
 $('clearInput').onclick=()=>{$('jsonInput').value='';$('importStatus').textContent=''};
-</script><script>if('serviceWorker' in navigator)navigator.serviceWorker.register('service-worker.js?build=20261004-v45').catch(()=>{});</script></body></html>
+</script><script>if('serviceWorker' in navigator)navigator.serviceWorker.register('service-worker.js?build=20261115-v44').catch(()=>{});</script></body></html>
