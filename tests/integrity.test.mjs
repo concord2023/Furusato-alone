@@ -56,6 +56,16 @@ test('HTMLが使う Furusato* グローバルがどこかのJSで定義されて
   assert.deepEqual([...new Set(missing)], []);
 });
 
+test('app.js を読むページは tax-tables.js を先に読む', () => {
+  for (const f of htmlFiles) {
+    const html = readFileSync(join(root, f), 'utf8');
+    const appIdx = html.indexOf('src="app.js"');
+    if (appIdx < 0) continue;
+    const taxIdx = html.indexOf('src="tax-tables.js"');
+    assert.ok(taxIdx >= 0 && taxIdx < appIdx, `${f}: tax-tables.js が app.js より前に無い`);
+  }
+});
+
 test('manifest.jsonが正しく、start_urlとアイコンが存在する', () => {
   const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));
   const start = manifest.start_url.replace(/^\.\//, '');
