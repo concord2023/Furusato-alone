@@ -32,4 +32,4 @@ const prompt=`【ふるさと納税アプリからの更新依頼】\n\nこの�
 $('copyPrompt').onclick=async()=>{try{await navigator.clipboard.writeText(prompt);$('copyStatus').textContent='依頼文をコピーしました。';$('copyStatus').className='status ok'}catch(e){$('copyStatus').textContent='コピーできませんでした。下の依頼文を長押しでコピーしてください。';$('copyStatus').className='status error';const p=document.createElement('textarea');p.value=prompt;p.className='wide';$('copyStatus').after(p)}};
 $('reflectJson').onclick=async()=>{const s=$('importStatus');try{const r=await importDocs($('jsonInput').value);s.textContent=`反映完了：追加${r.added}件／更新${r.updated}件／重複整理${r.removed}件。読み取りDBで確認できます。`;s.className='status ok';$('jsonInput').value=''}catch(e){s.textContent='反映できません：'+e.message;s.className='status error'}};
 $('clearInput').onclick=()=>{$('jsonInput').value='';$('importStatus').textContent=''};
-</script><script>if('serviceWorker' in navigator)navigator.serviceWorker.register('service-worker.js?build=20261115-v44').catch(()=>{});</script></body></html>
+</script><script>if('serviceWorker' in navigator)navigator.serviceWorker.register('service-worker.js?build=20261115-v45').catch(()=>{});</script></body></html>
